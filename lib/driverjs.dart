@@ -36,6 +36,19 @@ export 'src/popover.dart'
 export 'src/popover_widget.dart'
     show DriverPopoverContent, PopoverPositioner, RenderPopoverPositioner;
 
-// Internal-only: context.dart, events.dart, highlight.dart, overlay_widget.dart,
-// stage.dart, utils.dart. These implement the public surface above but
-// aren't meant to be constructed/called directly by package users.
+// M5: hints.
+export 'src/hint_widgets.dart' show HintBeacon, HintBeaconStyle, HintPopover;
+export 'src/hints.dart'
+    show
+        DriverHint,
+        HintHook,
+        HintHookOpts,
+        HintPopoverRenderHook,
+        Hints,
+        HintsConfig,
+        hints;
+
+// Internal-only: context.dart, events.dart, highlight.dart,
+// overlay_widget.dart, registry.dart, stage.dart, utils.dart. These
+// implement the public surface above but aren't meant to be constructed/
+// called directly by package users.

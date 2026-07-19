@@ -31,6 +31,7 @@ import 'context.dart';
 import 'events.dart';
 import 'highlight.dart';
 import 'overlay_widget.dart';
+import 'registry.dart';
 import 'state.dart';
 import 'step.dart';
 import 'theme.dart';
@@ -365,6 +366,13 @@ class _DriverImpl implements Driver {
     );
     overlayState.insert(_entry!);
     _ctx.state.isInitialized = true;
+
+    // Design decision #12: increment the shared tour counter so any
+    // `Hints` instance listening (`DriverRegistry.activeTourCount`) hides
+    // itself while a tour is up. Decremented in `_destroyInternal`'s
+    // teardown, once per successful mount → destroy cycle (both this method
+    // and that one guard on `_entry`, so neither double-fires).
+    DriverRegistry.activeTourCount.value++;
 
     _refreshScheduler = RefreshScheduler(_handleRefresh);
     _metricsObserver = DriverMetricsObserver(_refreshScheduler!);
@@ -769,6 +777,9 @@ class _DriverImpl implements Driver {
 
     _entry!.remove();
     _entry = null;
+    // See the matching increment in `_ensureMounted` — this is the other
+    // half of design decision #12's tour↔hints coordination.
+    DriverRegistry.activeTourCount.value--;
 
     final stateSnapshot = _ctx.state.copy();
     final focusToRestore = _ctx.state.focusToRestore;
