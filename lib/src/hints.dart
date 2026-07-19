@@ -50,6 +50,9 @@ typedef HintPopoverRenderHook =
 class HintHookOpts {
   const HintHookOpts({required this.config, required this.hints});
 
+  /// The live config the [Hints] controller was built/last `setHints`'d
+  /// with — lets a hook read sibling settings (e.g. `buttonText`) without
+  /// needing its own closure over the original [HintsConfig].
   final HintsConfig config;
 
   /// The live [Hints] controller — lets a hook call back into it (e.g.
@@ -87,11 +90,27 @@ class DriverHint {
 
   /// Overrides `HintsConfig.beacon`.
   final HintBeacon? beacon;
+
+  /// Per-hint popover copy/behavior (title, description, button text,
+  /// render hook). `null` falls back to `HintsConfig.buttonText`/theme
+  /// defaults with no title or description — mirrors `hint.popover` in
+  /// `hints.ts` being optional.
   final HintPopover? popover;
 
+  /// Fires once this hint's beacon becomes visible (mounted by [show] or a
+  /// later [Hints.restore]) — mirrors `hint.onOpen` in `hints.ts`. Not
+  /// called again on every [Hints.refresh]; only on the transition into
+  /// visible.
   final HintHook? onOpen;
+
+  /// Fires once this hint's beacon/popover is torn down, whether via
+  /// [Hints.dismiss], [Hints.hide], or [Hints.setHints] replacing the list —
+  /// mirrors `hint.onDismiss` in `hints.ts`.
   final HintHook? onDismiss;
 
+  /// Arbitrary caller data, unread by this package — threaded through
+  /// unchanged for hook implementations to stash their own bookkeeping on,
+  /// mirroring `hint.data` in `hints.ts`.
   final Map<String, Object?>? data;
 }
 
@@ -112,6 +131,9 @@ class HintsConfig {
     this.onButtonClick,
   });
 
+  /// The hints to mount on [Hints.show]. `null`/`[]` means [Hints.show] is
+  /// a no-op until a later [Hints.setHints] populates it — mirrors
+  /// `config.hints` in `hints.ts` defaulting to `[]`.
   final List<DriverHint>? hints;
 
   /// Default beacon config for every hint; a hint's own [DriverHint.beacon]
@@ -127,6 +149,9 @@ class HintsConfig {
   /// `HintPopover.buttonText` is set.
   final String? buttonText;
 
+  /// Config < step < hint level theme override for beacon/popover visuals —
+  /// same [DriverTheme] object a tour's `DriverConfig.theme` uses, applied
+  /// here to every hint that doesn't set its own via `HintPopover`.
   final DriverTheme? theme;
 
   /// Gap kept between the beacon (or, in overlay mode, the cutout) and the
@@ -137,7 +162,15 @@ class HintsConfig {
   /// step, while its popover is open. See [Hints]'s class doc for the full
   /// behavior split.
   final bool overlay;
+
+  /// Dim fill color when [overlay] is true. Defaults to `#000`, matching
+  /// `DriverTheme.overlayColor`'s default (independent of [theme] since
+  /// `hints.ts` exposes this as its own top-level config field, not nested
+  /// under a theme object).
   final Color overlayColor;
+
+  /// Opacity applied to [overlayColor] when [overlay] is true. Defaults to
+  /// `0.7`, matching `DriverTheme.overlayOpacity`'s default.
   final double overlayOpacity;
 
   /// The [BuildContext] used to resolve the root [Overlay] to mount into
@@ -145,8 +178,20 @@ class HintsConfig {
   /// resolves to a mounted context.
   final BuildContext? context;
 
+  /// Config-level fallback fired whenever any hint opens, in addition to
+  /// that hint's own [DriverHint.onOpen] (both run, config-level first) —
+  /// mirrors `config.onOpen` in `hints.ts`.
   final HintHook? onOpen;
+
+  /// Config-level fallback fired whenever any hint dismisses, in addition
+  /// to that hint's own [DriverHint.onDismiss] — mirrors `config.onDismiss`
+  /// in `hints.ts`.
   final HintHook? onDismiss;
+
+  /// Fired when a hint popover's default button ("Got it") is clicked,
+  /// before the default dismiss-and-advance behavior runs — mirrors
+  /// `config.onButtonClick` in `hints.ts`. There is no per-hint override for
+  /// this one; it's config-level only.
   final HintHook? onButtonClick;
 }
 

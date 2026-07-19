@@ -26,6 +26,11 @@ class DriverState {
   /// The element passed to the most recent `highlight()`/`drive()` call,
   /// before any transition has settled — `activeElement` in context.ts.
   BuildContext? activeElement;
+
+  /// The step config paired with [activeElement] on the most recent
+  /// `highlight()`/`drive()` call — `activeStep` in context.ts. Like
+  /// [activeElement], this is the pre-settle value; `refreshActiveHighlight`
+  /// reads [internalActiveStep] instead once a transition is in flight.
   DriveStep? activeStep;
 
   /// The previously active element/step at the time of the most recent

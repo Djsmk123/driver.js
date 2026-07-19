@@ -158,6 +158,11 @@ class DriverTheme {
   /// `highlight.dart`).
   final DriverPopoverBuilder? popoverBuilder;
 
+  /// Returns a copy with the given fields replaced, leaving every other
+  /// field as-is — used when a step/hint only wants to tweak one or two
+  /// visual values (e.g. a lighter `overlayColor`) without redeclaring the
+  /// whole `DriverTheme`, since [DriverTheme] itself is immutable
+  /// (`const`-constructible) rather than mutated in place.
   DriverTheme copyWith({
     Color? overlayColor,
     double? overlayOpacity,

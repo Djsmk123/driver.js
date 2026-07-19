@@ -150,8 +150,19 @@ class PopoverPlacement {
   /// Top-left corner of the popover box.
   final Offset offset;
 
+  /// The [Side] the popover actually ended up rendered on, after the
+  /// preferred-side/fallback-order logic in [resolvePopoverPlacement] ran —
+  /// may differ from the `side` that was requested if it didn't fit.
   final Side? renderedSide;
+
+  /// Which popover edge the arrow sits on, per [resolveArrowSide] — usually
+  /// [renderedSide] but can flip to the perpendicular edge when the element
+  /// has scrolled clear of that side.
   final Side? arrowSide;
+
+  /// Inline offset of the arrow along [arrowSide], as computed by
+  /// [calculateArrowOffset]. Paired with [arrowSide]; both are `null`
+  /// together.
   final double? arrowOffset;
 
   @override

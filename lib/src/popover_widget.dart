@@ -44,6 +44,11 @@ class RenderPopoverPositioner extends RenderShiftedBox {
   }) : super(child);
 
   Rect _element;
+
+  /// The anchor rect (overlay-local, same space as [resolvePopoverPlacement]
+  /// expects) the popover is positioned against and the arrow points at.
+  /// Updated every frame the highlighted element moves, so setting it always
+  /// triggers a relayout rather than diffing for "did it actually move".
   set element(Rect value) {
     if (_element == value) return;
     _element = value;
@@ -51,6 +56,10 @@ class RenderPopoverPositioner extends RenderShiftedBox {
   }
 
   Side _side;
+
+  /// Preferred [Side] to render on, passed straight through to
+  /// [resolvePopoverPlacement]'s `side` — the actual rendered side may
+  /// differ if there's no room (see that function's fallback-order doc).
   set side(Side value) {
     if (_side == value) return;
     _side = value;
@@ -58,6 +67,9 @@ class RenderPopoverPositioner extends RenderShiftedBox {
   }
 
   PopoverAlignment _align;
+
+  /// Cross-axis alignment against [element], passed straight through to
+  /// [resolvePopoverPlacement]'s `align`.
   set align(PopoverAlignment value) {
     if (_align == value) return;
     _align = value;
@@ -65,6 +77,10 @@ class RenderPopoverPositioner extends RenderShiftedBox {
   }
 
   double _offset;
+
+  /// Gap kept between [element] and the popover box — forwarded to
+  /// [resolvePopoverPlacement]'s `offset` (typically `stagePadding +
+  /// popoverOffset` from the caller).
   set offset(double value) {
     if (_offset == value) return;
     _offset = value;
@@ -72,6 +88,9 @@ class RenderPopoverPositioner extends RenderShiftedBox {
   }
 
   double _padding;
+
+  /// How far an align start/end popover reaches past [element]'s box —
+  /// forwarded to [resolvePopoverPlacement]'s `padding`.
   set padding(double value) {
     if (_padding == value) return;
     _padding = value;
@@ -79,6 +98,11 @@ class RenderPopoverPositioner extends RenderShiftedBox {
   }
 
   bool _centered;
+
+  /// When true, centers the popover in the overlay instead of anchoring it
+  /// to [element] — used for the anchor-less, modal-like popover; forwarded
+  /// to [resolvePopoverPlacement]'s `centered`, which also suppresses the
+  /// arrow (see [paint]).
   set centered(bool value) {
     if (_centered == value) return;
     _centered = value;
@@ -86,6 +110,10 @@ class RenderPopoverPositioner extends RenderShiftedBox {
   }
 
   Color _arrowColor;
+
+  /// Fill color of the arrow triangle, matching `DriverTheme.
+  /// popoverBackgroundColor` so it reads as part of the popover body. A
+  /// paint-only property — changing it doesn't affect layout.
   set arrowColor(Color value) {
     if (_arrowColor == value) return;
     _arrowColor = value;
@@ -93,6 +121,10 @@ class RenderPopoverPositioner extends RenderShiftedBox {
   }
 
   double _arrowSize;
+
+  /// Side length of the square arrow bounding box (default [kArrowSize] =
+  /// 10, matching driver.js's CSS-border triangle); also clamps the child's
+  /// max width in [performLayout] so the arrow always has room beside it.
   set arrowSize(double value) {
     if (_arrowSize == value) return;
     _arrowSize = value;
@@ -109,6 +141,9 @@ class RenderPopoverPositioner extends RenderShiftedBox {
   @override
   bool get sizedByParent => true;
 
+  /// Always fills the incoming constraints — the positioner itself is a
+  /// full-overlay-sized layer; only its child (the actual popover box) gets
+  /// a tight width band, computed inside [performLayout].
   @override
   Size computeDryLayout(BoxConstraints constraints) => constraints.biggest;
 
@@ -117,6 +152,11 @@ class RenderPopoverPositioner extends RenderShiftedBox {
     size = constraints.biggest;
   }
 
+  /// Lays out the child within the `min(250, ·)`/`max(300, ·)`-ish width
+  /// band described in the class doc, then hands the child's resolved size
+  /// to [resolvePopoverPlacement] to pick its offset and the arrow's side/
+  /// offset, caching the result in [placement] for [paint] and for widget
+  /// tests to assert against.
   @override
   void performLayout() {
     final child = this.child;
@@ -154,6 +194,10 @@ class RenderPopoverPositioner extends RenderShiftedBox {
     (child.parentData! as BoxParentData).offset = placement.offset;
   }
 
+  /// Paints the child normally, then the arrow triangle on top via
+  /// [_paintArrow] — unless [placement] has no `arrowSide`/`arrowOffset`
+  /// (the centered or none-fit-pinned cases), in which case no arrow is
+  /// drawn at all.
   @override
   void paint(PaintingContext context, Offset offset) {
     super.paint(context, offset);
@@ -265,6 +309,9 @@ class RenderPopoverPositioner extends RenderShiftedBox {
     canvas.drawPath(path, Paint()..color = _arrowColor);
   }
 
+  /// Exposes [element]/[side]/[align]/[offset]/[padding]/[centered] and the
+  /// resolved [placement] to `flutter inspector`/`toStringDeep()`, matching
+  /// the pattern `overlay_widget.dart`'s `RenderOverlayCutout` uses.
   @override
   void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
@@ -297,13 +344,28 @@ class PopoverPositioner extends SingleChildRenderObjectWidget {
     super.child,
   });
 
+  /// See [RenderPopoverPositioner.element].
   final Rect element;
+
+  /// See [RenderPopoverPositioner.side].
   final Side side;
+
+  /// See [RenderPopoverPositioner.align].
   final PopoverAlignment align;
+
+  /// See [RenderPopoverPositioner.offset].
   final double offset;
+
+  /// See [RenderPopoverPositioner.padding].
   final double padding;
+
+  /// See [RenderPopoverPositioner.centered].
   final bool centered;
+
+  /// See [RenderPopoverPositioner.arrowColor].
   final Color arrowColor;
+
+  /// See [RenderPopoverPositioner.arrowSize].
   final double arrowSize;
 
   @override
@@ -349,7 +411,14 @@ class DriverPopoverContent extends StatelessWidget {
     required this.theme,
   });
 
+  /// Resolved title/description/buttons/progress-text state to render —
+  /// the same mutable model tour and hint hooks write to, snapshotted for
+  /// this build (see `popover.dart`'s [DriverPopoverData]).
   final DriverPopoverData data;
+
+  /// Visual values this content reads instead of hard-coding `popover.css`;
+  /// see `theme.dart`'s [DriverTheme] for the CSS-property-by-property
+  /// mapping.
   final DriverTheme theme;
 
   bool get _showClose => data.showButtons.contains(DriverButton.close);
