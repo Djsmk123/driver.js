@@ -49,6 +49,7 @@ class RenderOverlayCutout extends RenderBox {
     required this._stageRadius,
     required this._disableActiveInteraction,
     required this._onOverlayTap,
+    required this._onHoleTap,
   });
 
   Rect _stageRect;
@@ -98,6 +99,14 @@ class RenderOverlayCutout extends RenderBox {
   VoidCallback _onOverlayTap;
   set onOverlayTap(VoidCallback value) => _onOverlayTap = value;
 
+  /// Fired on tap-up inside the hole when it's *not* swallowing taps (i.e.
+  /// `disableActiveInteraction` is off) — design decision #4's
+  /// `advanceOnClick` hook. `driver.dart`'s handler owns the actual
+  /// "effective `advanceOnClick`" + mid-transition checks; this render
+  /// object only reports that a qualifying tap happened.
+  VoidCallback _onHoleTap;
+  set onHoleTap(VoidCallback value) => _onHoleTap = value;
+
   Path? _cachedPath;
   Size? _cachedPathSize;
 
@@ -137,8 +146,17 @@ class RenderOverlayCutout extends RenderBox {
   }
 
   // Hit-testing is handled entirely here rather than via `hitTestSelf`,
-  // because the hole case needs to return `false` (keep probing behind
-  // this render object) rather than just "not handled, but still opaque".
+  // because the hole (normal, interactive) case needs to both (a) let the
+  // hit test continue behind this render object — so the highlighted app
+  // element's own gesture handlers still fire, design decision #4 — and
+  // (b) still have `handleEvent` called on *this* object for the same
+  // pointer, so `advanceOnClick` can observe the tap. Those two things are
+  // controlled independently in Flutter: `result.add` alone decides who
+  // gets `handleEvent`, while this method's return value only tells the
+  // ancestor `Stack` whether to keep probing earlier (lower-z) children —
+  // the same "add unconditionally, return false to stay translucent"
+  // technique `RenderProxyBoxWithHitTestBehavior` uses for
+  // `HitTestBehavior.translucent`.
   @override
   bool hitTest(BoxHitTestResult result, {required Offset position}) {
     if (!(Offset.zero & size).contains(position)) {
@@ -146,27 +164,37 @@ class RenderOverlayCutout extends RenderBox {
     }
 
     final inDimRegion = _path().contains(position);
-    if (inDimRegion || _disableActiveInteraction) {
-      result.add(BoxHitTestEntry(this, position));
-      return true;
-    }
+    final consumesHit = inDimRegion || _disableActiveInteraction;
 
-    // Inside the hole, interaction allowed: let the hit test continue to
-    // whatever the root overlay entry is stacked on top of.
-    return false;
+    result.add(BoxHitTestEntry(this, position));
+    return consumesHit;
   }
 
   Offset? _downPosition;
+  bool _downInDimRegion = false;
 
   @override
   void handleEvent(PointerEvent event, covariant BoxHitTestEntry entry) {
     if (event is PointerDownEvent) {
       _downPosition = event.position;
+      _downInDimRegion = _path().contains(event.localPosition);
     } else if (event is PointerUpEvent) {
       final down = _downPosition;
+      final downInDimRegion = _downInDimRegion;
       _downPosition = null;
-      if (down != null && (event.position - down).distance <= kTouchSlop) {
+      if (down == null || (event.position - down).distance > kTouchSlop) {
+        return;
+      }
+
+      if (downInDimRegion) {
         _onOverlayTap();
+      } else if (!_disableActiveInteraction) {
+        // Hole tap, interaction allowed — `advanceOnClick` candidate. A
+        // `disableActiveInteraction` hole tap swallows silently: no
+        // `_onOverlayTap`, no `_onHoleTap`, and (per `hitTest` above)
+        // `consumesHit` already blocked the target's own gesture handlers
+        // from ever seeing it.
+        _onHoleTap();
       }
     } else if (event is PointerCancelEvent) {
       _downPosition = null;
@@ -183,6 +211,7 @@ class _CutoutWidget extends LeafRenderObjectWidget {
     required this.stageRadius,
     required this.disableActiveInteraction,
     required this.onOverlayTap,
+    required this.onHoleTap,
   });
 
   final Rect stageRect;
@@ -192,6 +221,7 @@ class _CutoutWidget extends LeafRenderObjectWidget {
   final double stageRadius;
   final bool disableActiveInteraction;
   final VoidCallback onOverlayTap;
+  final VoidCallback onHoleTap;
 
   @override
   RenderOverlayCutout createRenderObject(BuildContext context) {
@@ -203,6 +233,7 @@ class _CutoutWidget extends LeafRenderObjectWidget {
       stageRadius: stageRadius,
       disableActiveInteraction: disableActiveInteraction,
       onOverlayTap: onOverlayTap,
+      onHoleTap: onHoleTap,
     );
   }
 
@@ -218,7 +249,8 @@ class _CutoutWidget extends LeafRenderObjectWidget {
       ..stagePadding = stagePadding
       ..stageRadius = stageRadius
       ..disableActiveInteraction = disableActiveInteraction
-      ..onOverlayTap = onOverlayTap;
+      ..onOverlayTap = onOverlayTap
+      ..onHoleTap = onHoleTap;
   }
 }
 
@@ -237,6 +269,7 @@ class DriverOverlay extends StatefulWidget {
     required this.fadeInDuration,
     required this.animateFadeIn,
     required this.onOverlayTap,
+    required this.onHoleTap,
     required this.allowKeyboardControl,
     required this.onEscape,
     required this.onArrowRight,
@@ -259,6 +292,11 @@ class DriverOverlay extends StatefulWidget {
   final bool animateFadeIn;
 
   final VoidCallback onOverlayTap;
+
+  /// Fired on a qualifying tap-up inside the hole (design decision #4's
+  /// `advanceOnClick` candidate) — see [RenderOverlayCutout]'s field of the
+  /// same name for exactly which taps reach it.
+  final VoidCallback onHoleTap;
 
   /// Gates all keyboard handling below — `DriverConfig.allowKeyboardControl`
   /// at mount time (design decision #10). `false` makes every key a no-op.
@@ -287,6 +325,7 @@ class DriverOverlayState extends State<DriverOverlay>
   late DriverTheme _theme = widget.theme;
   late bool _disableActiveInteraction = widget.disableActiveInteraction;
   VoidCallback _onOverlayTap = () {};
+  VoidCallback _onHoleTap = () {};
 
   late final AnimationController _dimFade = AnimationController(
     vsync: this,
@@ -327,6 +366,7 @@ class DriverOverlayState extends State<DriverOverlay>
   void initState() {
     super.initState();
     _onOverlayTap = widget.onOverlayTap;
+    _onHoleTap = widget.onHoleTap;
     if (widget.animateFadeIn && widget.fadeInDuration > Duration.zero) {
       _dimFade.forward();
     } else {
@@ -570,6 +610,7 @@ class DriverOverlayState extends State<DriverOverlay>
               stageRadius: _theme.stageRadius,
               disableActiveInteraction: _disableActiveInteraction,
               onOverlayTap: () => _onOverlayTap(),
+              onHoleTap: () => _onHoleTap(),
             ),
           ),
           if (popoverContent != null)

@@ -9,14 +9,19 @@
 /// (design decision #9). Keyboard routing (design decision #10) lives here
 /// too, as the handlers `overlay_widget.dart`'s `DriverOverlay` calls into.
 ///
-/// `waitForElement`, `skipMissingElement` walking, `advanceOnClick` and
-/// `disableActiveInteraction`-driven advancement are explicitly out of
-/// scope — M4. `drive()` here assumes every step's element resolves
-/// synchronously and nothing is ever skipped (`neverSkipStep` in
-/// `step.dart`), but every navigation method already goes through
-/// `findReachableIndex` so M4 can drop in a real skip predicate without a
-/// rewrite.
+/// M4 fills in what M3 left as stubs: `waitForElement` polling (a
+/// post-frame poll of `resolveTargetContext` plus a cancellable `Timer` for
+/// the timeout — the DOM `MutationObserver` `waitForStepElement` in
+/// `driver.ts` uses has no Flutter analogue, so this polls instead), the
+/// `shouldSkipStep`-driven skip walk inside `_drive` (design decision #9,
+/// including its forward-destroys/backward-stays-put asymmetry),
+/// `advanceOnClick`'s hole-tap handler, and the passive per-frame rect
+/// watcher that's the other half of design decision #5 (the metrics
+/// observer above only catches resize; this catches scroll, since the
+/// overlay entry never receives the app's `ScrollNotification`s).
 library;
+
+import 'dart:async';
 
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
@@ -184,7 +189,15 @@ class _DriverImpl implements Driver {
   }
 
   @override
-  void drive([int stepIndex = 0]) {
+  void drive([int stepIndex = 0]) => _drive(stepIndex);
+
+  /// The real implementation behind [drive]. [hasWaitedForElement] is the
+  /// Dart equivalent of `driver.ts`'s `drive(stepIndex, hasWaitedForElement)`
+  /// second argument: `true` only on the recursive call
+  /// [_waitForStepElement] makes once a wait settles (by resolution or by
+  /// timeout), so that call never re-enters the wait branch below a second
+  /// time for the same step.
+  void _drive(int stepIndex, {bool hasWaitedForElement = false}) {
     _cancelPendingWait();
 
     final steps = _ctx.config.steps;
@@ -197,19 +210,69 @@ class _DriverImpl implements Driver {
     }
 
     final currentStep = steps[stepIndex];
-    final mountContext = _resolveMountContext(currentStep);
-    if (mountContext == null) {
-      throw FlutterError.fromParts([
-        ErrorSummary(
-          'driverjs: could not resolve a BuildContext to mount the overlay.',
-        ),
-        ErrorDescription(
-          'Pass `context:` in DriverConfig, or make sure step $stepIndex\'s '
-          '`element` resolves to a mounted widget before calling drive().',
-        ),
-      ]);
+
+    // `waitForElement`: a step whose element is specified but not yet
+    // resolvable gets a grace period before falling through to the usual
+    // missing-element handling (skip walk, or a centered dummy highlight).
+    // This returns *before* touching the overlay at all — whatever was
+    // highlighted before (if anything) stays highlighted while waiting,
+    // mirroring `drive()`'s early return in driver.ts.
+    final waitTimeout =
+        currentStep.waitForElement ?? _ctx.config.waitForElement;
+    if (!hasWaitedForElement &&
+        waitTimeout > Duration.zero &&
+        currentStep.element != null &&
+        resolveTargetContext(currentStep.element) == null) {
+      _waitForStepElement(stepIndex, currentStep, waitTimeout);
+      return;
     }
-    _ensureMounted(mountContext);
+
+    // Skip walk (design decision #9): direction is resolved against
+    // whatever `activeIndex` *was* before this call (not yet overwritten
+    // below), exactly like `stepIndex < activeIndex` in driver.ts — so a
+    // backward `movePrevious()`/keyboard-left landing on a skippable step
+    // keeps walking backward, and a forward one keeps walking forward.
+    // Ported as a direct step-by-step recursion (not `findReachableIndex`)
+    // to match driver.ts exactly: each intermediate step gets its own
+    // `_drive` call, so it goes through the wait-for-element branch above
+    // too, rather than being silently jumped over.
+    if (shouldSkipStep(_ctx, currentStep)) {
+      final activeIndex = _ctx.state.activeIndex;
+      final direction = (activeIndex != null && stepIndex < activeIndex)
+          ? -1
+          : 1;
+      final targetIndex = stepIndex + direction;
+      if (targetIndex >= 0 && targetIndex < steps.length) {
+        _drive(targetIndex);
+      } else if (direction == 1) {
+        _destroyInternal(withHook: true);
+      }
+      // Walking backward off the start (direction == -1, no target index
+      // left): stay put — no destroy, no state change. This asymmetry is
+      // deliberate, not a bug; see design decision #9.
+      return;
+    }
+
+    // Mount resolution only matters the first time: once the overlay entry
+    // exists, later steps (including an element-less "centered" one reached
+    // via a skip walk or a `waitForElement` timeout) don't need a resolvable
+    // element or an explicit `config.context` of their own to navigate to.
+    if (_entry == null) {
+      final mountContext = _resolveMountContext(currentStep);
+      if (mountContext == null) {
+        throw FlutterError.fromParts([
+          ErrorSummary(
+            'driverjs: could not resolve a BuildContext to mount the '
+            'overlay.',
+          ),
+          ErrorDescription(
+            'Pass `context:` in DriverConfig, or make sure step $stepIndex\'s '
+            '`element` resolves to a mounted widget before calling drive().',
+          ),
+        ]);
+      }
+      _ensureMounted(mountContext);
+    }
 
     // Captured fresh on every `drive()` call — see `DriverState
     // .focusToRestore`'s doc comment for why this isn't just captured once
@@ -223,15 +286,15 @@ class _DriverImpl implements Driver {
           steps,
           stepIndex + 1,
           1,
-          neverSkipStep,
+          _shouldSkip,
         );
         if (nextIndex != null) {
-          drive(nextIndex);
+          _drive(nextIndex);
         } else {
           _destroyInternal(withHook: true);
         }
       },
-      onPrevClick: (element, step, opts) => drive(stepIndex - 1),
+      onPrevClick: (element, step, opts) => _drive(stepIndex - 1),
       onCloseClick: (element, step, opts) => _destroyInternal(withHook: true),
     );
 
@@ -242,6 +305,14 @@ class _DriverImpl implements Driver {
     );
     SchedulerBinding.instance.ensureVisualUpdate();
   }
+
+  /// [shouldSkipStep] bound to this driver's context — the predicate
+  /// [findReachableIndex] is called with everywhere reachability matters
+  /// (`moveNext`/`movePrevious`/`hasNextStep`/`hasPreviousStep`/
+  /// `getNextStep` below; `_drive`'s own skip walk above is a direct
+  /// step-by-step recursion instead, to match driver.ts's recursion
+  /// exactly — see its comment).
+  bool _shouldSkip(DriveStep step) => shouldSkipStep(_ctx, step);
 
   void _performHighlight(DriveStep step) {
     final overlay = _overlayKey.currentState;
@@ -283,6 +354,7 @@ class _DriverImpl implements Driver {
             fadeInDuration: _ctx.config.duration,
             animateFadeIn: _ctx.config.animate,
             onOverlayTap: _handleOverlayTap,
+            onHoleTap: _handleHoleTap,
             allowKeyboardControl: _ctx.config.allowKeyboardControl,
             onEscape: _handleEscape,
             onArrowRight: _handleArrowRight,
@@ -297,11 +369,66 @@ class _DriverImpl implements Driver {
     _refreshScheduler = RefreshScheduler(_handleRefresh);
     _metricsObserver = DriverMetricsObserver(_refreshScheduler!);
     WidgetsBinding.instance.addObserver(_metricsObserver!);
+
+    _armRectWatcher();
   }
 
   void _handleRefresh() {
     final overlay = _overlayKey.currentState;
     if (overlay == null) return;
+    refreshActiveHighlight(_ctx, overlay);
+  }
+
+  /// The other half of design decision #5 (`DriverMetricsObserver` above
+  /// only catches resize): a passive, self-re-arming post-frame callback
+  /// that compares the active element's *current* rect against
+  /// `state.activeStagePosition` (the stage's last-known rect — kept in
+  /// sync by both a settled highlight transition and by
+  /// [refreshActiveHighlight] itself) every time a frame renders for
+  /// *any* reason, and snaps the stage (via [refreshActiveHighlight]) only
+  /// when they differ. This is what catches the app scrolling out from
+  /// under an active highlight — the overlay entry never receives the
+  /// app's `ScrollNotification`s, so there's no push-based signal to react
+  /// to; comparing rects on every rendered frame is the only way left to
+  /// notice.
+  ///
+  /// Deliberately calls neither `ensureVisualUpdate()` nor any other
+  /// frame-forcing API — re-arming via `addPostFrameCallback` alone means
+  /// this rides whatever frames the app already produces (scrolling,
+  /// ticker animations, unrelated `setState`s) instead of scheduling extra
+  /// ones of its own; an idle app with nothing changing simply stops
+  /// getting called until something else wakes it up again. Stops
+  /// re-arming once [_entry] goes `null` (the driver was destroyed).
+  void _armRectWatcher() {
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (_entry == null) return;
+      _checkRectChanged();
+      _armRectWatcher();
+    });
+  }
+
+  void _checkRectChanged() {
+    if (_ctx.state.transitionToken != null) {
+      // The stage-chase ticker already re-reads the live target rect every
+      // tick while a transition is in flight (design decision #3) — a
+      // passive comparison here would either be redundant or fight it.
+      return;
+    }
+
+    final activeStep = _ctx.state.internalActiveStep;
+    if (activeStep == null) return;
+
+    final overlay = _overlayKey.currentState;
+    if (overlay == null) return;
+
+    final overlayBox = overlay.overlayBox;
+    final activeElement = _ctx.state.internalActiveElement;
+    final rect = activeElement != null
+        ? (rectOfContext(activeElement, overlayBox) ??
+              _ctx.state.activeStagePosition)
+        : centeredDummyRect(overlayBox);
+    if (rect == null || rect == _ctx.state.activeStagePosition) return;
+
     refreshActiveHighlight(_ctx, overlay);
   }
 
@@ -329,10 +456,110 @@ class _DriverImpl implements Driver {
     }
   }
 
-  // M4 will populate this with real `waitForElement` cancellation
-  // (`cancelElementWait` in `driver.ts`); the call site exists in `drive()`
-  // now so that milestone doesn't need to touch `drive()` itself.
-  void _cancelPendingWait() {}
+  /// The hole-tap handler behind `advanceOnClick` (design decision #4),
+  /// ported from `handleActiveElementClick` in `overlay.ts`. The cutout's
+  /// hit-testing (`overlay_widget.dart`) already guarantees this only fires
+  /// for a tap-up that landed inside the hole *and* wasn't swallowed by
+  /// `disableActiveInteraction` — this handler owns the remaining checks:
+  /// no advancing mid-transition, and only when the effective
+  /// `advanceOnClick` (step overrides config) is actually on.
+  void _handleHoleTap() {
+    if (_ctx.state.transitionToken != null) return;
+
+    final activeStep = _ctx.state.internalActiveStep;
+    if (activeStep == null) return;
+
+    final advanceOnClick =
+        activeStep.advanceOnClick ?? _ctx.config.advanceOnClick;
+    if (!advanceOnClick) return;
+
+    final activeElement = _ctx.state.internalActiveElement;
+    final hook = resolveNextHook(_ctx, activeStep);
+
+    // Deferred to the next frame so the highlighted element's own gesture
+    // handlers (e.g. its `onTap`) get to run first — mirrors JS's
+    // bubble-phase event handling, where `onDriverClick` never calls
+    // `preventDefault`/`stopPropagation` for a hole tap, letting the
+    // browser's own dispatch continue to the target afterwards.
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (hook != null) {
+        hook(activeElement, activeStep, _ctx.getHookOpts());
+      } else {
+        moveNext();
+      }
+    });
+    SchedulerBinding.instance.ensureVisualUpdate();
+  }
+
+  /// A pending `waitForElement` timeout, if any — the only piece of the
+  /// wait that needs an explicit cancel handle. The post-frame poll
+  /// [_waitForStepElement] schedules cancels itself implicitly by checking
+  /// [_waitToken] each time it runs (`addPostFrameCallback` has no cancel
+  /// handle the way `cancelAnimationFrame`/`clearInterval` do, mirroring
+  /// `RefreshScheduler`'s generation-counter trick in `events.dart`), but a
+  /// live `Timer` left uncancelled would fire on its own schedule
+  /// regardless of that check ever running again — and in tests, a `Timer`
+  /// still pending when the test ends is an error in its own right, not
+  /// just a correctness bug.
+  Timer? _waitTimeoutTimer;
+
+  /// Bumped by every [_cancelPendingWait] call (and every
+  /// [_waitForStepElement] call, which starts by cancelling any previous
+  /// wait) — see [_waitTimeoutTimer]'s doc comment for why the poll needs
+  /// this even though the timer alone doesn't.
+  int _waitToken = 0;
+
+  /// Cancels any in-flight `waitForElement` poll/timeout, mirroring
+  /// `cancelElementWait` in `driver.ts`. Called at the top of every
+  /// [_drive] (a fresh navigation supersedes whatever the driver used to be
+  /// waiting on), from [setSteps], and from [_destroyInternal]'s teardown —
+  /// the same set of call sites `cancelElementWait()` has in driver.ts.
+  void _cancelPendingWait() {
+    _waitToken++;
+    _waitTimeoutTimer?.cancel();
+    _waitTimeoutTimer = null;
+  }
+
+  /// Polls for [step]'s element to mount (post-frame, since there's no
+  /// Flutter analogue of the DOM `MutationObserver` `waitForStepElement` in
+  /// driver.ts uses) for up to [timeout], then re-enters [_drive] with
+  /// `hasWaitedForElement: true` — either because the element resolved, or
+  /// because the wait simply ran out (in which case `_drive`'s normal
+  /// missing-element handling — the skip walk, or a centered dummy
+  /// highlight — takes over). The overlay is left completely untouched
+  /// while this runs: whatever was highlighted before this call (if
+  /// anything) stays highlighted, since [_drive] returned before reaching
+  /// any of the highlight/mount code.
+  void _waitForStepElement(int stepIndex, DriveStep step, Duration timeout) {
+    final token = ++_waitToken;
+
+    void settle() {
+      // Superseded by a newer `_drive`/`_cancelPendingWait` call since this
+      // was scheduled — don't resurrect a navigation the driver has since
+      // moved past (or been destroyed out from under).
+      if (_waitToken != token) return;
+      _waitTimeoutTimer?.cancel();
+      _waitTimeoutTimer = null;
+      _drive(stepIndex, hasWaitedForElement: true);
+    }
+
+    void poll(Duration elapsed) {
+      if (_waitToken != token) return;
+      if (resolveTargetContext(step.element) != null) {
+        settle();
+        return;
+      }
+      // Re-arms for the next frame without forcing one itself (no
+      // `ensureVisualUpdate()`) — same "ride whatever frames the app
+      // produces anyway" approach as `_armRectWatcher` below. In practice
+      // this is never starved: mounting the awaited element is itself
+      // normally the result of a `setState`/rebuild, which is a frame.
+      SchedulerBinding.instance.addPostFrameCallback(poll);
+    }
+
+    SchedulerBinding.instance.addPostFrameCallback(poll);
+    _waitTimeoutTimer = Timer(timeout, settle);
+  }
 
   void _handleEscape() {
     if (!_ctx.config.allowClose) return;
@@ -393,7 +620,7 @@ class _DriverImpl implements Driver {
       steps,
       activeIndex + 1,
       1,
-      neverSkipStep,
+      _shouldSkip,
     );
     if (nextIndex != null) {
       drive(nextIndex);
@@ -411,7 +638,7 @@ class _DriverImpl implements Driver {
       steps,
       activeIndex - 1,
       -1,
-      neverSkipStep,
+      _shouldSkip,
     );
     if (previousIndex != null) {
       drive(previousIndex);
@@ -435,7 +662,7 @@ class _DriverImpl implements Driver {
     final activeIndex = _ctx.state.activeIndex;
     if (activeIndex == null) return false;
     final steps = _ctx.config.steps ?? const <DriveStep>[];
-    return findReachableIndex(steps, activeIndex + 1, 1, neverSkipStep) != null;
+    return findReachableIndex(steps, activeIndex + 1, 1, _shouldSkip) != null;
   }
 
   @override
@@ -443,8 +670,7 @@ class _DriverImpl implements Driver {
     final activeIndex = _ctx.state.activeIndex;
     if (activeIndex == null) return false;
     final steps = _ctx.config.steps ?? const <DriveStep>[];
-    return findReachableIndex(steps, activeIndex - 1, -1, neverSkipStep) !=
-        null;
+    return findReachableIndex(steps, activeIndex - 1, -1, _shouldSkip) != null;
   }
 
   @override
@@ -474,7 +700,7 @@ class _DriverImpl implements Driver {
       steps,
       activeIndex + 1,
       1,
-      neverSkipStep,
+      _shouldSkip,
     );
     return nextIndex != null ? steps[nextIndex] : null;
   }

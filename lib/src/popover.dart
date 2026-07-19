@@ -186,7 +186,13 @@ bool _isLastReachableStep(DriverContext ctx) {
   final activeIndex = ctx.state.activeIndex;
   if (activeIndex == null) return false;
   final steps = ctx.config.steps ?? const <DriveStep>[];
-  return findReachableIndex(steps, activeIndex + 1, 1, neverSkipStep) == null;
+  return findReachableIndex(
+        steps,
+        activeIndex + 1,
+        1,
+        (s) => shouldSkipStep(ctx, s),
+      ) ==
+      null;
 }
 
 /// Resolves [step]/[popover] (already button/text-resolved by

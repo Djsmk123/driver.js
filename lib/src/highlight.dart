@@ -95,7 +95,14 @@ void transferHighlight(
   Rect resolveLiveTarget() => resolveToRect();
 
   if (toContext != null) {
-    bringInView(toContext, smoothScroll: ctx.config.smoothScroll);
+    // Deliberately not awaited — runs concurrently with the stage-chase
+    // animation below (see [bringInView]'s doc comment).
+    bringInView(
+      toContext,
+      overlayBox,
+      smoothScroll: ctx.config.smoothScroll,
+      duration: ctx.config.duration,
+    );
   }
 
   // Old popover (if any) disappears immediately, mirroring

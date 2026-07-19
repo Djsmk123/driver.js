@@ -68,20 +68,83 @@ Rect? rectOfContext(BuildContext context, RenderObject ancestor) {
 }
 
 /// Scrolls [context] into view of its nearest [Scrollable], mirroring
-/// `bringInView` in `utils.ts` (skip-if-already-visible, smooth-scroll
-/// toggle, "taller than the viewport" block alignment, and the
-/// scrollable-parent smooth-scroll suppression it applies).
+/// `bringInView` in `utils.ts` — with one deliberate deviation (design
+/// decision #11): JS's `isElementInView` checks the element's rect against
+/// `window.innerWidth/Height` (the whole browser viewport); we check it
+/// against [overlayBox]'s bounds instead, since design decision #1 already
+/// makes the root overlay's own size the Flutter analogue of the viewport
+/// everywhere else in this package. Skips scrolling entirely when the
+/// target is already fully visible there — not merely because
+/// `Scrollable.ensureVisible` would end up computing a zero-delta scroll in
+/// that case anyway, but because skipping the call outright avoids handing
+/// it a nonzero [duration] that would otherwise animate a no-op.
 ///
-/// Full scrolling support is M4 scope (see design decision #11 in the
-/// plan); this stub exists now so `driver.dart`/`highlight.dart` have a
-/// stable call site to wire up once that milestone lands, and so this
-/// function's signature — not its behavior — is settled during M1.
+/// [smoothScroll] toggles [duration] vs. an instant `Duration.zero` jump,
+/// and the "taller than the viewport" block-alignment quirk picks `0.0`
+/// (top-aligned) over `0.5` (centered) the same way JS's
+/// `isTallerThanViewport ? "start" : "center"` does. Unlike JS's
+/// `hasScrollableParent` smooth-scroll suppression (worked around a
+/// specific browser rendering bug), that check has no Flutter analogue and
+/// isn't ported — `Scrollable.ensureVisible` doesn't share the bug it
+/// existed for.
+///
+/// A `null` [Scrollable.maybeOf] result (the target has no scrollable
+/// ancestor at all) or a not-yet-laid-out [context] both no-op, same as a
+/// missing element does in JS.
+///
+/// This runs concurrently with the stage-chase animation
+/// (`transitionStage` in `overlay_widget.dart`) — `transferHighlight` in
+/// `highlight.dart` deliberately doesn't `await` this, so scrolling and the
+/// stage/popover animation proceed in parallel, each tick of the ticker
+/// re-reading the live (mid-scroll) target rect per design decision #3.
+///
+/// `DriverConfig.allowScroll: false` has no effect on this function itself
+/// — see that field's doc comment and design decision #11's documented
+/// parity gap: the dim region is already opaque (`RenderOverlayCutout`'s
+/// hit-testing) and so already absorbs scroll gestures made outside the
+/// hole, which covers most of what `allowScroll: false` is for; a wheel
+/// scroll landing *inside* the hole (over the highlighted element itself)
+/// isn't blocked, unlike JS's `document.body` `overflow: hidden` toggle,
+/// which has no Flutter-idiomatic equivalent given the hole must otherwise
+/// stay interactive.
 Future<void> bringInView(
-  BuildContext context, {
+  BuildContext context,
+  RenderBox overlayBox, {
   bool smoothScroll = false,
+  Duration duration = const Duration(milliseconds: 400),
 }) async {
-  // TODO(M4): port isElementInView / hasScrollableParent / block alignment
-  // and call Scrollable.ensureVisible.
+  if (!context.mounted) return;
+
+  final renderObject = context.findRenderObject();
+  if (renderObject is! RenderBox ||
+      !renderObject.attached ||
+      !renderObject.hasSize) {
+    return;
+  }
+
+  final scrollableState = Scrollable.maybeOf(context);
+  if (scrollableState == null) return;
+
+  final elementRect = rectOfContext(context, overlayBox);
+  if (elementRect == null) return;
+
+  final overlayBounds = Offset.zero & overlayBox.size;
+  final fullyVisible =
+      elementRect.top >= overlayBounds.top &&
+      elementRect.left >= overlayBounds.left &&
+      elementRect.bottom <= overlayBounds.bottom &&
+      elementRect.right <= overlayBounds.right;
+  if (fullyVisible) return;
+
+  final isTallerThanViewport =
+      renderObject.size.height > scrollableState.position.viewportDimension;
+
+  await Scrollable.ensureVisible(
+    context,
+    alignment: isTallerThanViewport ? 0.0 : 0.5,
+    duration: smoothScroll ? duration : Duration.zero,
+    curve: Curves.easeInOut,
+  );
 }
 
 /// Exact port of `easeInOutQuad` from `utils.ts` — a classic 4-arg

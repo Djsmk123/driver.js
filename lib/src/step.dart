@@ -6,18 +6,22 @@
 /// `isFirstStep`/`isLastStep`/`hasNextStep`/`hasPreviousStep`/`getNextStep`
 /// in `driver.dart`).
 ///
-/// M3 implements the full button/text/progress resolution, but not the
-/// *skip* predicate itself: `shouldSkipStep` (driven by
-/// `skipMissingElement`/`waitForElement`, both M4 scope) always returns
-/// `false` here — [neverSkipStep] — so every [findReachableIndex] walk is
-/// currently equivalent to a plain bounds check. The parameter is wired
-/// through regardless so M4 can drop in a real predicate without changing
-/// any call site's shape.
+/// M3 implemented the full button/text/progress resolution but left the
+/// *skip* predicate a no-op ([neverSkipStep]). M4 fills it in with
+/// [shouldSkipStep] below (ported from `step.ts`'s function of the same
+/// name) and threads it through every [findReachableIndex] call in this
+/// file and in `driver.dart`, so reachability queries
+/// (`isFirstStep`/`isLastStep`/`hasNextStep`/`hasPreviousStep`/
+/// `getNextStep`) and the tour's own skip-walk (`driver.dart`'s `_drive`)
+/// agree on what counts as reachable. [neverSkipStep] is kept only as a
+/// building block for tests/callers that explicitly want a plain bounds
+/// check.
 library;
 
 import 'config.dart';
 import 'context.dart';
 import 'popover.dart';
+import 'utils.dart';
 
 /// The literal driver.js default for `Popover["progressText"]`
 /// (`"{{current}} of {{total}}"` in `step.ts`), interpolated last by
@@ -102,9 +106,25 @@ class DriveStep {
 /// ever passes [neverSkipStep].
 typedef SkipStepPredicate = bool Function(DriveStep step);
 
-/// The always-false skip predicate M3 wires everywhere a real one will
-/// eventually go — see this file's top-level doc comment.
+/// The always-false skip predicate M3 wired everywhere a real one now goes
+/// (see this file's top-level doc comment) — kept for tests/callers that
+/// want a plain bounds check with no skip-awareness at all.
 bool neverSkipStep(DriveStep step) => false;
+
+/// Whether [step] should be skipped during tour navigation, ported from
+/// `shouldSkipStep` in `step.ts`. Driven by the effective
+/// `skipMissingElement` (step overrides config) — with that off, or for an
+/// intentionally element-less step (`step.element == null`, driver.js's
+/// "centered" step, never a *missing* element), this is always `false`.
+/// Only a *specified but currently unresolvable* element gets skipped, and
+/// only when `skipMissingElement` allows it — the same live-tree resolution
+/// `resolveTargetContext` performs everywhere else, so a step that mounts
+/// later stops being "skippable" without any extra bookkeeping.
+bool shouldSkipStep(DriverContext ctx, DriveStep step) {
+  final skip = step.skipMissingElement ?? ctx.config.skipMissingElement;
+  if (!skip || step.element == null) return false;
+  return resolveTargetContext(step.element) == null;
+}
 
 /// The index navigation would actually land on, starting at [fromIndex]
 /// (inclusive) and walking [steps] in [direction] (`1` forward, `-1`
@@ -153,7 +173,13 @@ DriverHook? resolveNextHook(DriverContext ctx, DriveStep? step) {
   final steps = ctx.config.steps ?? const <DriveStep>[];
   final isLastStep =
       activeIndex != null &&
-      findReachableIndex(steps, activeIndex + 1, 1, neverSkipStep) == null;
+      findReachableIndex(
+            steps,
+            activeIndex + 1,
+            1,
+            (s) => shouldSkipStep(ctx, s),
+          ) ==
+          null;
 
   final onDoneClick = step?.popover?.onDoneClick ?? ctx.config.onDoneClick;
   if (isLastStep && onDoneClick != null) return onDoneClick;
@@ -215,10 +241,10 @@ DriveStep resolveTourStep(
   final step = steps[stepIndex];
   final popover = step.popover ?? const DriverPopover();
 
-  final hasNextStep =
-      findReachableIndex(steps, stepIndex + 1, 1, neverSkipStep) != null;
+  bool skip(DriveStep s) => shouldSkipStep(ctx, s);
+  final hasNextStep = findReachableIndex(steps, stepIndex + 1, 1, skip) != null;
   final hasPreviousStep =
-      findReachableIndex(steps, stepIndex - 1, -1, neverSkipStep) != null;
+      findReachableIndex(steps, stepIndex - 1, -1, skip) != null;
 
   final doneBtnText = popover.doneBtnText ?? ctx.config.doneBtnText ?? 'Done';
   final showProgress = popover.showProgress ?? ctx.config.showProgress;
