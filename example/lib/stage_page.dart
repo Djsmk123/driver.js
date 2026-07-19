@@ -59,6 +59,16 @@ class StagePageState extends State<StagePage> {
     final keys = widget.keys;
 
     return ListView(
+      // Generous cache extent: the off-screen/scroll-into-view scenarios
+      // highlight a target several screens below the fold, and
+      // `Scrollable.ensureVisible` (driven by driverjs's `bringInView`) can
+      // only find a target that already has a laid-out RenderObject —
+      // SliverList only keeps children within its cache extent mounted, so
+      // the default (250px) leaves far-off targets un-built and the
+      // scroll-into-view silently no-ops. This page is short enough that
+      // keeping everything built is cheap.
+      // ignore: deprecated_member_use
+      cacheExtent: 4000,
       padding: const EdgeInsets.all(24),
       children: [
         Text(
@@ -154,6 +164,9 @@ class StagePageState extends State<StagePage> {
             borderRadius: BorderRadius.circular(8),
           ),
           child: ListView.builder(
+            // Same reasoning as the outer ListView's cacheExtent above.
+            // ignore: deprecated_member_use
+            cacheExtent: 2000,
             padding: const EdgeInsets.all(8),
             itemCount: 20,
             itemBuilder: (context, index) {
@@ -202,13 +215,13 @@ class StagePageState extends State<StagePage> {
         const SizedBox(height: 32),
         Text('Below the fold', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
-        // Enough trailing filler that the page itself scrolls, so
+        // Just enough trailing filler that the page itself scrolls, so
         // off-screen/scroll-into-view scenarios have something to prove.
-        for (var i = 0; i < 12; i++)
+        for (var i = 0; i < 6; i++)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Card(
-              key: i == 8 ? widget.keys.belowFold : null,
+              key: i == 4 ? widget.keys.belowFold : null,
               child: ListTile(
                 leading: const Icon(Icons.article_outlined),
                 title: Text('Filler section ${i + 1}'),
