@@ -3,20 +3,19 @@
 /// `onPopoverRender` and the default popover content widget), ported from
 /// `popover.ts`'s `Popover`/`PopoverDOM`/`PopoverRenderOptions` types.
 ///
-/// Full button/progress *resolution* against live tour state (which
-/// buttons show, the `nextBtnText` → `doneBtnText` swap on the last step,
-/// `{{current}}/{{total}}` interpolation — design decision #6 in the plan)
-/// is M3 scope: it needs `findReachableIndex`/tour navigation, neither of
-/// which exist yet. [resolvePopoverData] here only resolves a single
-/// step/config/popover triple with the same literal defaults driver.js
-/// ships (`nextBtnText: "Next"`, all three buttons shown, …), since M2 has
-/// no tour to resolve reachability against.
+/// By the time [resolvePopoverData] runs, `step` is already the fully
+/// button/text-resolved step `resolveTourStep`/`applyHighlightDefaults` in
+/// `step.dart` produced (design decision #6) — what's left here is
+/// resolving the button *tap handlers*, which stay unresolved until the
+/// moment a button is actually pressed (design decision #9's "resolved at
+/// tap time, not render time"), so a `setConfig`/navigation between render
+/// and a later tap is still picked up.
 library;
 
 import 'package:flutter/widgets.dart';
 
 import 'config.dart';
-import 'driver.dart';
+import 'context.dart';
 import 'position.dart';
 import 'step.dart';
 import 'theme.dart';
@@ -176,32 +175,37 @@ class DriverPopoverData {
   List<Widget> extraFooterChildren;
 }
 
-/// Resolves a single [DriveStep]/[DriverPopover]/[DriverConfig] triple into
-/// a [DriverPopoverData]. See this file's top-level doc comment for what's
-/// deliberately *not* done here (reachability-aware button/text quirks —
-/// M3 scope).
-///
-/// [driver] backs the default close-button behavior: with no
-/// `onCloseClick` hook configured anywhere, closing still has to do
-/// *something* sensible, so it falls back to `driver.destroy()` — the one
-/// piece of navigation M1 already implements.
+/// Whether the tour is currently on its last reachable step — with no tour
+/// running (`activeIndex == null`, e.g. a bare `highlight()`) this is
+/// always `false`. Backs [DriverPopoverData.doneButton], the widget-level
+/// signal that the next button is acting as the done button (its text was
+/// already swapped to `doneBtnText` upstream in `resolveTourStep`; this
+/// flag exists purely for a builder/theme that wants to style it
+/// differently).
+bool _isLastReachableStep(DriverContext ctx) {
+  final activeIndex = ctx.state.activeIndex;
+  if (activeIndex == null) return false;
+  final steps = ctx.config.steps ?? const <DriveStep>[];
+  return findReachableIndex(steps, activeIndex + 1, 1, neverSkipStep) == null;
+}
+
+/// Resolves [step]/[popover] (already button/text-resolved by
+/// `resolveTourStep`/`applyHighlightDefaults`) against [ctx] into a
+/// [DriverPopoverData], including the tap-time button-handler resolution
+/// this file's top-level doc comment describes: each `onXClick` closure
+/// looks up `resolveNextHook`/`resolvePrevHook`/`resolveCloseHook` (step
+/// popover → config → the tour's own navigation) *when pressed*, not when
+/// this function runs, and falls all the way back to the live
+/// `ctx.driver`'s `moveNext`/`movePrevious`/[DriverContext.requestUserClose]
+/// for a step with no hook and no tour default at all (a bare
+/// `highlight()`'s popover, say).
 DriverPopoverData resolvePopoverData({
-  required DriverConfig config,
+  required DriverContext ctx,
   required DriveStep step,
   required DriverPopover popover,
-  required DriverHookOpts hookOpts,
   required BuildContext? element,
-  required Driver driver,
 }) {
-  VoidCallback? resolveClick(
-    DriverHook? stepHook,
-    DriverHook? configHook,
-    VoidCallback? fallback,
-  ) {
-    final hook = stepHook ?? configHook;
-    if (hook == null) return fallback;
-    return () => hook(element, step, hookOpts);
-  }
+  final config = ctx.config;
 
   return DriverPopoverData(
     title: popover.title,
@@ -211,15 +215,33 @@ DriverPopoverData resolvePopoverData({
     showButtons: popover.showButtons ?? config.showButtons,
     disableButtons: popover.disableButtons ?? config.disableButtons,
     showProgress: popover.showProgress ?? config.showProgress,
-    progressText: popover.progressText ?? config.progressText,
+    progressText: popover.progressText,
     nextBtnText: popover.nextBtnText ?? config.nextBtnText ?? 'Next',
     prevBtnText: popover.prevBtnText ?? config.prevBtnText ?? 'Previous',
-    onNextClick: resolveClick(popover.onNextClick, config.onNextClick, null),
-    onPrevClick: resolveClick(popover.onPrevClick, config.onPrevClick, null),
-    onCloseClick: resolveClick(
-      popover.onCloseClick,
-      config.onCloseClick,
-      driver.destroy,
-    ),
+    doneButton: _isLastReachableStep(ctx),
+    onNextClick: () {
+      final hook = resolveNextHook(ctx, step);
+      if (hook != null) {
+        hook(element, step, ctx.getHookOpts());
+        return;
+      }
+      ctx.driver?.moveNext();
+    },
+    onPrevClick: () {
+      final hook = resolvePrevHook(ctx, step);
+      if (hook != null) {
+        hook(element, step, ctx.getHookOpts());
+        return;
+      }
+      ctx.driver?.movePrevious();
+    },
+    onCloseClick: () {
+      final hook = resolveCloseHook(ctx, step);
+      if (hook != null) {
+        hook(element, step, ctx.getHookOpts());
+        return;
+      }
+      ctx.requestUserClose?.call();
+    },
   );
 }

@@ -1,11 +1,21 @@
 /// The public `Driver` API and the `driver()` factory, ported from
-/// `driver.ts`. M1 implements only the highlight-only subset described in
-/// the plan's milestone list: `highlight`, `destroy`, `refresh`,
-/// `isActive`, and the mount/context resolution design decision #1
-/// describes. Every tour-navigation method (`drive`, `moveNext`,
-/// `movePrevious`, `moveTo`, `hasNextStep`, …) throws
-/// [UnimplementedError] until M3 lands `step.dart`'s button/progress
-/// resolution and the navigation flow in design decision #9.
+/// `driver.ts`. M3 lands the full tour-navigation surface: `drive`,
+/// `moveNext`/`movePrevious`/`moveTo`, `getPreviousStep`/`getPreviousElement`
+/// (previously-*visited*, not `index - 1`), the reachability queries
+/// (`isFirstStep`/`isLastStep`/`hasNextStep`/`hasPreviousStep`/`getNextStep`,
+/// all backed by `findReachableIndex` in `step.dart`), `setConfig`'s
+/// wholesale-replace and `setSteps`'s state-reset-keep-config semantics, and
+/// `destroy`'s `onDestroyStarted`-interception + focus-restore teardown
+/// (design decision #9). Keyboard routing (design decision #10) lives here
+/// too, as the handlers `overlay_widget.dart`'s `DriverOverlay` calls into.
+///
+/// `waitForElement`, `skipMissingElement` walking, `advanceOnClick` and
+/// `disableActiveInteraction`-driven advancement are explicitly out of
+/// scope — M4. `drive()` here assumes every step's element resolves
+/// synchronously and nothing is ever skipped (`neverSkipStep` in
+/// `step.dart`), but every navigation method already goes through
+/// `findReachableIndex` so M4 can drop in a real skip predicate without a
+/// rewrite.
 library;
 
 import 'package:flutter/scheduler.dart';
@@ -22,37 +32,48 @@ import 'theme.dart';
 import 'utils.dart';
 
 /// The public driver.js-mirroring API. See the plan's public API sketch
-/// for the full shape this grows into across M1-M4; only the subset
-/// documented on each method below is implemented in M1.
+/// for the full shape; every method below is implemented as of M3.
 abstract class Driver {
-  /// Starts (or restarts) a tour at [stepIndex]. M3.
+  /// Starts (or restarts) a tour at [stepIndex]. Out-of-range (including no
+  /// configured steps at all) tears the driver down instead, mirroring
+  /// `drive()` falling through to `destroy()` in `driver.ts`.
   void drive([int stepIndex = 0]);
 
   /// Highlights a single element, independent of any tour. Mounts the
   /// overlay (resolving a [BuildContext] to attach it to per design
   /// decision #1) if it isn't already, then animates the stage to [step]'s
-  /// element.
+  /// element. Unlike [drive], this never captures focus for restore and its
+  /// popover (if any) gets driver.js's bare-highlight defaults —
+  /// buttonless, no progress (design decision #6).
   void highlight(DriveStep step);
 
-  /// Advances to the next tour step. M3.
+  /// Advances to the next tour step, or [destroy]s (with the
+  /// `onDestroyStarted` hook able to intercept) once past the last
+  /// reachable one.
   void moveNext();
 
-  /// Returns to the previous tour step. M3.
+  /// Returns to the previous tour step, or [destroy]s once past the first
+  /// reachable one. Note this differs from what ArrowLeft does at the
+  /// keyboard layer, which no-ops instead on the first step (design
+  /// decision #10) — that's a keyboard-only guard, not something
+  /// [movePrevious] itself does, matching `driver.ts`.
   void movePrevious();
 
-  /// Jumps to tour step [index]. M3.
+  /// Jumps straight to tour step [index] (not reachability-walked — an
+  /// out-of-range index [destroy]s the same way [moveNext]/[movePrevious]
+  /// do past either end).
   void moveTo(int index);
 
-  /// Whether a next tour step exists. M3.
+  /// Whether a reachable next tour step exists.
   bool hasNextStep();
 
-  /// Whether a previous tour step exists. M3.
+  /// Whether a reachable previous tour step exists.
   bool hasPreviousStep();
 
-  /// Whether the active step is the tour's first reachable step. M3.
+  /// Whether the active step is the tour's first reachable step.
   bool isFirstStep();
 
-  /// Whether the active step is the tour's last reachable step. M3.
+  /// Whether the active step is the tour's last reachable step.
   bool isLastStep();
 
   /// The step passed to the most recent `highlight()`/`drive()` call.
@@ -61,13 +82,18 @@ abstract class Driver {
   /// The element passed to the most recent `highlight()`/`drive()` call.
   BuildContext? getActiveElement();
 
-  /// The previously *visited* step (not simply `index - 1`). M3.
+  /// The previously *visited* step — not simply `index - 1`, which would be
+  /// wrong the moment a skip walk or `moveTo` jump is involved. Tracked as
+  /// the step that was actually settled/active immediately before the
+  /// current one, the same way `previousStep` is populated in
+  /// `transferHighlight` (`highlight.dart`).
   DriveStep? getPreviousStep();
 
-  /// The previously *visited* element (not simply `index - 1`). M3.
+  /// The previously *visited* element — see [getPreviousStep].
   BuildContext? getPreviousElement();
 
-  /// The next step a tour would move to. M3.
+  /// The next reachable step a tour would move to, or `null` outside a tour
+  /// or on the last reachable step.
   DriveStep? getNextStep();
 
   /// The active tour step index, or `null` outside a tour.
@@ -80,11 +106,14 @@ abstract class Driver {
   DriverConfig getConfig();
 
   /// Replaces the config wholesale (design decision #9's "wholesale
-  /// replace", not a merge).
+  /// replace", not a merge) — re-applies every `DriverConfig` default
+  /// rather than keeping old field values [config] doesn't set.
   void setConfig(DriverConfig config);
 
-  /// Replaces the tour's steps, resetting tour state but keeping config.
-  /// M3.
+  /// Replaces the tour's steps, resetting navigation state (active index,
+  /// visit history, …) but keeping the rest of the current config as-is —
+  /// mirrors `setSteps` in `driver.ts` (`ctx.resetState()` then
+  /// `ctx.setConfig({...ctx.getConfig(), steps})`).
   void setSteps(List<DriveStep> steps);
 
   /// Requests a frame-coalesced re-sync of the stage to the active
@@ -94,11 +123,15 @@ abstract class Driver {
   /// Whether the overlay is currently mounted.
   bool isActive();
 
-  /// Tears down the overlay and resets state. Unlike JS's `destroy()`,
-  /// this never runs `onDestroyStarted` (that hook only fires for
-  /// user-initiated closes — Esc, the popover's `x`, an overlay-click
-  /// close — which don't exist until M2/M3 wire them up; see design
-  /// decision #9).
+  /// Tears down the overlay and resets state. Unlike every *internal* path
+  /// that can close the driver (Esc, the popover's `x`, an overlay-click
+  /// close, `moveNext`/`movePrevious`/`moveTo`/`drive` past either end),
+  /// this public, parameterless method always skips `onDestroyStarted` —
+  /// mirrors `destroy: () => destroy(false)` in `driver.ts`. Those other,
+  /// user-initiated paths pass `withHook: true` internally so
+  /// `config.onDestroyStarted` gets a chance to intercept the close (a
+  /// confirm-on-exit pattern); the hook has to call `driver.destroy()`
+  /// itself to actually tear down.
   void destroy();
 }
 
@@ -110,6 +143,7 @@ Driver driver([DriverConfig config = const DriverConfig()]) =>
 class _DriverImpl implements Driver {
   _DriverImpl(DriverConfig config) : _ctx = DriverContext(config) {
     _ctx.driver = this;
+    _ctx.requestUserClose = () => _destroyInternal(withHook: true);
   }
 
   final DriverContext _ctx;
@@ -122,7 +156,8 @@ class _DriverImpl implements Driver {
 
   @override
   void highlight(DriveStep step) {
-    final mountContext = _resolveMountContext(step);
+    final resolvedStep = applyHighlightDefaults(step);
+    final mountContext = _resolveMountContext(resolvedStep);
     if (mountContext == null) {
       throw FlutterError.fromParts([
         ErrorSummary(
@@ -143,7 +178,67 @@ class _DriverImpl implements Driver {
     // so the real work is deferred to a post-frame callback rather than
     // done inline.
     SchedulerBinding.instance.addPostFrameCallback(
-      (_) => _performHighlight(step),
+      (_) => _performHighlight(resolvedStep),
+    );
+    SchedulerBinding.instance.ensureVisualUpdate();
+  }
+
+  @override
+  void drive([int stepIndex = 0]) {
+    _cancelPendingWait();
+
+    final steps = _ctx.config.steps;
+    if (steps == null ||
+        steps.isEmpty ||
+        stepIndex < 0 ||
+        stepIndex >= steps.length) {
+      _destroyInternal(withHook: true);
+      return;
+    }
+
+    final currentStep = steps[stepIndex];
+    final mountContext = _resolveMountContext(currentStep);
+    if (mountContext == null) {
+      throw FlutterError.fromParts([
+        ErrorSummary(
+          'driverjs: could not resolve a BuildContext to mount the overlay.',
+        ),
+        ErrorDescription(
+          'Pass `context:` in DriverConfig, or make sure step $stepIndex\'s '
+          '`element` resolves to a mounted widget before calling drive().',
+        ),
+      ]);
+    }
+    _ensureMounted(mountContext);
+
+    // Captured fresh on every `drive()` call — see `DriverState
+    // .focusToRestore`'s doc comment for why this isn't just captured once
+    // at tour start.
+    _ctx.state.focusToRestore = FocusManager.instance.primaryFocus;
+    _ctx.state.activeIndex = stepIndex;
+
+    final defaults = TourStepDefaults(
+      onNextClick: (element, step, opts) {
+        final nextIndex = findReachableIndex(
+          steps,
+          stepIndex + 1,
+          1,
+          neverSkipStep,
+        );
+        if (nextIndex != null) {
+          drive(nextIndex);
+        } else {
+          _destroyInternal(withHook: true);
+        }
+      },
+      onPrevClick: (element, step, opts) => drive(stepIndex - 1),
+      onCloseClick: (element, step, opts) => _destroyInternal(withHook: true),
+    );
+
+    final resolvedStep = resolveTourStep(_ctx, stepIndex, defaults);
+
+    SchedulerBinding.instance.addPostFrameCallback(
+      (_) => _performHighlight(resolvedStep),
     );
     SchedulerBinding.instance.ensureVisualUpdate();
   }
@@ -188,6 +283,10 @@ class _DriverImpl implements Driver {
             fadeInDuration: _ctx.config.duration,
             animateFadeIn: _ctx.config.animate,
             onOverlayTap: _handleOverlayTap,
+            allowKeyboardControl: _ctx.config.allowKeyboardControl,
+            onEscape: _handleEscape,
+            onArrowRight: _handleArrowRight,
+            onArrowLeft: _handleArrowLeft,
           ),
         );
       },
@@ -210,17 +309,73 @@ class _DriverImpl implements Driver {
     final behavior = _ctx.config.overlayClickBehavior;
     switch (behavior) {
       case OverlayClickBehaviorClose():
-        if (_ctx.config.allowClose) destroy();
+        if (_ctx.config.allowClose) _destroyInternal(withHook: true);
       case OverlayClickBehaviorCustom(:final handler):
-        final step = _ctx.state.activeStep;
+        final step = _ctx.state.internalActiveStep;
+        final element = _ctx.state.internalActiveElement;
         if (step != null) {
-          handler(_ctx.state.activeElement, step, _ctx.getHookOpts());
+          handler(element, step, _ctx.getHookOpts());
         }
       case OverlayClickBehaviorNextStep():
-        // Advancing a tour is M3 scope; nothing to advance to yet outside
-        // one.
-        break;
+        final step = _ctx.state.activeStep;
+        final element = _ctx.state.activeElement;
+        if (step == null) return;
+        final hook = resolveNextHook(_ctx, step);
+        if (hook != null) {
+          hook(element, step, _ctx.getHookOpts());
+          return;
+        }
+        moveNext();
     }
+  }
+
+  // M4 will populate this with real `waitForElement` cancellation
+  // (`cancelElementWait` in `driver.ts`); the call site exists in `drive()`
+  // now so that milestone doesn't need to touch `drive()` itself.
+  void _cancelPendingWait() {}
+
+  void _handleEscape() {
+    if (!_ctx.config.allowClose) return;
+    _destroyInternal(withHook: true);
+  }
+
+  void _handleArrowRight() {
+    if (_ctx.state.transitionToken != null) return;
+
+    final activeIndex = _ctx.state.activeIndex;
+    final activeStep = _ctx.state.internalActiveStep;
+    if (activeIndex == null || activeStep == null) return;
+
+    final hook = resolveNextHook(_ctx, activeStep);
+    if (hook != null) {
+      hook(_ctx.state.internalActiveElement, activeStep, _ctx.getHookOpts());
+      return;
+    }
+    moveNext();
+  }
+
+  void _handleArrowLeft() {
+    if (_ctx.state.transitionToken != null) return;
+
+    final activeIndex = _ctx.state.activeIndex;
+    final activeStep = _ctx.state.internalActiveStep;
+    if (activeIndex == null || activeStep == null) return;
+
+    final steps = _ctx.config.steps ?? const <DriveStep>[];
+    final previousIndex = activeIndex - 1;
+    if (previousIndex < 0 || previousIndex >= steps.length) {
+      // No-op on the first step — a keyboard-only guard (design decision
+      // #10); `movePrevious()` itself has no such guard, see its doc
+      // comment.
+      return;
+    }
+
+    final hook = resolvePrevHook(_ctx, activeStep);
+    if (hook != null) {
+      hook(_ctx.state.internalActiveElement, activeStep, _ctx.getHookOpts());
+      return;
+    }
+    movePrevious();
   }
 
   @override
@@ -230,28 +385,99 @@ class _DriverImpl implements Driver {
   bool isActive() => _entry != null;
 
   @override
-  void destroy() {
-    if (_entry == null) return;
-
-    if (_metricsObserver != null) {
-      WidgetsBinding.instance.removeObserver(_metricsObserver!);
-      _metricsObserver = null;
+  void moveNext() {
+    final activeIndex = _ctx.state.activeIndex;
+    if (activeIndex == null) return;
+    final steps = _ctx.config.steps ?? const <DriveStep>[];
+    final nextIndex = findReachableIndex(
+      steps,
+      activeIndex + 1,
+      1,
+      neverSkipStep,
+    );
+    if (nextIndex != null) {
+      drive(nextIndex);
+    } else {
+      _destroyInternal(withHook: true);
     }
-    _refreshScheduler?.dispose();
-    _refreshScheduler = null;
-
-    _entry!.remove();
-    _entry = null;
-
-    _ctx.state.reset();
-    _ctx.resetEmitter();
   }
+
+  @override
+  void movePrevious() {
+    final activeIndex = _ctx.state.activeIndex;
+    if (activeIndex == null) return;
+    final steps = _ctx.config.steps ?? const <DriveStep>[];
+    final previousIndex = findReachableIndex(
+      steps,
+      activeIndex - 1,
+      -1,
+      neverSkipStep,
+    );
+    if (previousIndex != null) {
+      drive(previousIndex);
+    } else {
+      _destroyInternal(withHook: true);
+    }
+  }
+
+  @override
+  void moveTo(int index) {
+    final steps = _ctx.config.steps ?? const <DriveStep>[];
+    if (index >= 0 && index < steps.length) {
+      drive(index);
+    } else {
+      _destroyInternal(withHook: true);
+    }
+  }
+
+  @override
+  bool hasNextStep() {
+    final activeIndex = _ctx.state.activeIndex;
+    if (activeIndex == null) return false;
+    final steps = _ctx.config.steps ?? const <DriveStep>[];
+    return findReachableIndex(steps, activeIndex + 1, 1, neverSkipStep) != null;
+  }
+
+  @override
+  bool hasPreviousStep() {
+    final activeIndex = _ctx.state.activeIndex;
+    if (activeIndex == null) return false;
+    final steps = _ctx.config.steps ?? const <DriveStep>[];
+    return findReachableIndex(steps, activeIndex - 1, -1, neverSkipStep) !=
+        null;
+  }
+
+  @override
+  bool isFirstStep() => _ctx.state.activeIndex != null && !hasPreviousStep();
+
+  @override
+  bool isLastStep() => _ctx.state.activeIndex != null && !hasNextStep();
 
   @override
   DriveStep? getActiveStep() => _ctx.state.activeStep;
 
   @override
   BuildContext? getActiveElement() => _ctx.state.activeElement;
+
+  @override
+  DriveStep? getPreviousStep() => _ctx.state.previousStep;
+
+  @override
+  BuildContext? getPreviousElement() => _ctx.state.previousElement;
+
+  @override
+  DriveStep? getNextStep() {
+    final activeIndex = _ctx.state.activeIndex;
+    if (activeIndex == null) return null;
+    final steps = _ctx.config.steps ?? const <DriveStep>[];
+    final nextIndex = findReachableIndex(
+      steps,
+      activeIndex + 1,
+      1,
+      neverSkipStep,
+    );
+    return nextIndex != null ? steps[nextIndex] : null;
+  }
 
   @override
   int? getActiveIndex() => _ctx.state.activeIndex;
@@ -266,44 +492,79 @@ class _DriverImpl implements Driver {
   void setConfig(DriverConfig config) => _ctx.setConfig(config);
 
   @override
-  void drive([int stepIndex = 0]) =>
-      throw UnimplementedError('drive() lands in M3');
+  void setSteps(List<DriveStep> steps) {
+    _cancelPendingWait();
+    _ctx.state.reset();
+    _ctx.setConfig(_ctx.config.copyWith(steps: steps));
+  }
 
   @override
-  void moveNext() => throw UnimplementedError('moveNext() lands in M3');
+  void destroy() => _destroyInternal(withHook: false);
 
-  @override
-  void movePrevious() => throw UnimplementedError('movePrevious() lands in M3');
+  /// The shared teardown implementation behind [destroy] and every
+  /// internal, user-initiated close path (Esc, the popover's `x`, an
+  /// overlay-click close, `moveNext`/`movePrevious`/`moveTo`/`drive` past
+  /// either end). [withHook] mirrors `destroy(withOnDestroyStartedHook)` in
+  /// `driver.ts`: when `true` and `config.onDestroyStarted` is set, the hook
+  /// runs *instead of* tearing down — it has to call `driver.destroy()`
+  /// itself (which always passes `withHook: false`) to actually close,
+  /// which is what makes a confirm-on-exit dialog possible. Teardown order
+  /// mirrors `driver.ts`'s `destroy()` exactly: cancel wait → detach
+  /// listeners → remove the overlay entry → snapshot state → reset state →
+  /// `onDeselected` then `onDestroyed` (against the snapshot) → restore
+  /// whatever had focus before the most recent `drive()` call.
+  void _destroyInternal({required bool withHook}) {
+    if (_entry == null) return;
 
-  @override
-  void moveTo(int index) => throw UnimplementedError('moveTo() lands in M3');
+    // The *settled* element/step (`__activeElement`/`__activeStep` in
+    // context.ts), not the unsettled `activeElement`/`activeStep` — a
+    // destroy mid-transition should still describe whatever was actually on
+    // screen, not a target the animation never reached.
+    final activeElement = _ctx.state.internalActiveElement;
+    final activeStep = _ctx.state.internalActiveStep;
 
-  @override
-  bool hasNextStep() => throw UnimplementedError('hasNextStep() lands in M3');
+    final onDestroyStarted = _ctx.config.onDestroyStarted;
+    if (withHook && onDestroyStarted != null && activeStep != null) {
+      onDestroyStarted(activeElement, activeStep, _ctx.getHookOpts());
+      return;
+    }
 
-  @override
-  bool hasPreviousStep() =>
-      throw UnimplementedError('hasPreviousStep() lands in M3');
+    final onDeselected = activeStep?.onDeselected ?? _ctx.config.onDeselected;
+    final onDestroyed = _ctx.config.onDestroyed;
 
-  @override
-  bool isFirstStep() => throw UnimplementedError('isFirstStep() lands in M3');
+    _cancelPendingWait();
 
-  @override
-  bool isLastStep() => throw UnimplementedError('isLastStep() lands in M3');
+    if (_metricsObserver != null) {
+      WidgetsBinding.instance.removeObserver(_metricsObserver!);
+      _metricsObserver = null;
+    }
+    _refreshScheduler?.dispose();
+    _refreshScheduler = null;
 
-  @override
-  DriveStep? getPreviousStep() =>
-      throw UnimplementedError('getPreviousStep() lands in M3');
+    _entry!.remove();
+    _entry = null;
 
-  @override
-  BuildContext? getPreviousElement() =>
-      throw UnimplementedError('getPreviousElement() lands in M3');
+    final stateSnapshot = _ctx.state.copy();
+    final focusToRestore = _ctx.state.focusToRestore;
 
-  @override
-  DriveStep? getNextStep() =>
-      throw UnimplementedError('getNextStep() lands in M3');
+    _ctx.state.reset();
+    _ctx.resetEmitter();
 
-  @override
-  void setSteps(List<DriveStep> steps) =>
-      throw UnimplementedError('setSteps() lands in M3');
+    if (activeStep != null) {
+      onDeselected?.call(
+        activeElement,
+        activeStep,
+        _ctx.getHookOpts(stateOverride: stateSnapshot),
+      );
+      onDestroyed?.call(
+        activeElement,
+        activeStep,
+        _ctx.getHookOpts(stateOverride: stateSnapshot),
+      );
+    }
+
+    if (focusToRestore != null && focusToRestore.canRequestFocus) {
+      focusToRestore.requestFocus();
+    }
+  }
 }

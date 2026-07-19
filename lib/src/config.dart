@@ -252,4 +252,49 @@ class DriverConfig {
   final DriverHook? onPrevClick;
   final DriverHook? onCloseClick;
   final DriverHook? onDoneClick;
+
+  /// Returns a copy with [steps] replaced and every other field kept as-is.
+  /// Used by `Driver.setSteps` (`context.ts`'s `setSteps: (steps) =>
+  /// ctx.setConfig({ ...ctx.getConfig(), steps })`) — the one place a
+  /// config field is updated without the wholesale replace `setConfig`
+  /// itself performs.
+  DriverConfig copyWith({List<DriveStep>? steps}) => DriverConfig(
+    steps: steps ?? this.steps,
+    animate: animate,
+    duration: duration,
+    overlayColor: overlayColor,
+    overlayOpacity: overlayOpacity,
+    smoothScroll: smoothScroll,
+    allowClose: allowClose,
+    allowScroll: allowScroll,
+    overlayClickBehavior: overlayClickBehavior,
+    stagePadding: stagePadding,
+    stageRadius: stageRadius,
+    popoverOffset: popoverOffset,
+    disableActiveInteraction: disableActiveInteraction,
+    advanceOnClick: advanceOnClick,
+    skipMissingElement: skipMissingElement,
+    waitForElement: waitForElement,
+    allowKeyboardControl: allowKeyboardControl,
+    showButtons: showButtons,
+    disableButtons: disableButtons,
+    showProgress: showProgress,
+    progressText: progressText,
+    nextBtnText: nextBtnText,
+    prevBtnText: prevBtnText,
+    doneBtnText: doneBtnText,
+    theme: theme,
+    popoverBuilder: popoverBuilder,
+    context: context,
+    onPopoverRender: onPopoverRender,
+    onHighlightStarted: onHighlightStarted,
+    onHighlighted: onHighlighted,
+    onDeselected: onDeselected,
+    onDestroyStarted: onDestroyStarted,
+    onDestroyed: onDestroyed,
+    onNextClick: onNextClick,
+    onPrevClick: onPrevClick,
+    onCloseClick: onCloseClick,
+    onDoneClick: onDoneClick,
+  );
 }

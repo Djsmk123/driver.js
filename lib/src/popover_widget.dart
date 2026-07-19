@@ -9,6 +9,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 
 import 'config.dart';
 import 'popover.dart';
@@ -559,9 +560,31 @@ class _FooterButtonState extends State<_FooterButton> {
       ),
     );
 
-    return widget.disabled
-        ? IgnorePointer(child: Opacity(opacity: 0.5, child: button))
-        : button;
+    // `Focus` (design decision #10): the popover's Tab focus trap
+    // (`overlay_widget.dart`'s `FocusTraversalGroup`) has nothing to cycle
+    // through unless its buttons are themselves focusable — a bare
+    // `GestureDetector` carries no focus node of its own. Disabled buttons
+    // opt out of both receiving focus and appearing in traversal order, on
+    // top of already swallowing taps via `IgnorePointer`.
+    return Focus(
+      canRequestFocus: !widget.disabled,
+      skipTraversal: widget.disabled,
+      onKeyEvent: (node, event) {
+        if (widget.disabled || widget.onPressed == null) {
+          return KeyEventResult.ignored;
+        }
+        if (event is KeyDownEvent &&
+            (event.logicalKey == LogicalKeyboardKey.enter ||
+                event.logicalKey == LogicalKeyboardKey.space)) {
+          widget.onPressed!();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: widget.disabled
+          ? IgnorePointer(child: Opacity(opacity: 0.5, child: button))
+          : button,
+    );
   }
 }
 
@@ -619,8 +642,26 @@ class _CloseButtonState extends State<_CloseButton> {
       ),
     );
 
-    return widget.disabled
-        ? IgnorePointer(child: Opacity(opacity: 0.5, child: button))
-        : button;
+    // See `_FooterButtonState.build`'s comment on why this needs a `Focus`
+    // wrapper at all (design decision #10's Tab focus trap).
+    return Focus(
+      canRequestFocus: !widget.disabled,
+      skipTraversal: widget.disabled,
+      onKeyEvent: (node, event) {
+        if (widget.disabled || widget.onPressed == null) {
+          return KeyEventResult.ignored;
+        }
+        if (event is KeyDownEvent &&
+            (event.logicalKey == LogicalKeyboardKey.enter ||
+                event.logicalKey == LogicalKeyboardKey.space)) {
+          widget.onPressed!();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: widget.disabled
+          ? IgnorePointer(child: Opacity(opacity: 0.5, child: button))
+          : button,
+    );
   }
 }

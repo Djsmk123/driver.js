@@ -166,12 +166,10 @@ void _renderPopover({
 
   final hookOpts = ctx.getHookOpts();
   final data = resolvePopoverData(
-    config: ctx.config,
+    ctx: ctx,
     step: step,
     popover: popover,
-    hookOpts: hookOpts,
     element: element,
-    driver: ctx.driver!,
   );
 
   // Mutating `data` here (texts, button lists, `extraFooterChildren`) is

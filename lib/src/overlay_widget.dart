@@ -15,6 +15,7 @@ library;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import 'popover_widget.dart';
@@ -236,6 +237,10 @@ class DriverOverlay extends StatefulWidget {
     required this.fadeInDuration,
     required this.animateFadeIn,
     required this.onOverlayTap,
+    required this.allowKeyboardControl,
+    required this.onEscape,
+    required this.onArrowRight,
+    required this.onArrowLeft,
   });
 
   final Rect initialStageRect;
@@ -254,6 +259,23 @@ class DriverOverlay extends StatefulWidget {
   final bool animateFadeIn;
 
   final VoidCallback onOverlayTap;
+
+  /// Gates all keyboard handling below — `DriverConfig.allowKeyboardControl`
+  /// at mount time (design decision #10). `false` makes every key a no-op.
+  final bool allowKeyboardControl;
+
+  /// Escape key-up. The `allowClose`/`onDestroyStarted`-interception gating
+  /// lives in `driver.dart`'s handler, not here — this widget only forwards
+  /// the raw key event.
+  final VoidCallback onEscape;
+
+  /// ArrowRight key-up (next/done). Mid-transition and reachability
+  /// guarding live in `driver.dart`'s handler.
+  final VoidCallback onArrowRight;
+
+  /// ArrowLeft key-up (previous, no-op on the first step). Mid-transition
+  /// and reachability guarding live in `driver.dart`'s handler.
+  final VoidCallback onArrowLeft;
 
   @override
   State<DriverOverlay> createState() => DriverOverlayState();
@@ -290,6 +312,16 @@ class DriverOverlayState extends State<DriverOverlay>
   );
 
   Ticker? _ticker;
+
+  /// Owns the popover's Tab-traversal cycle (design decision #10): a
+  /// dedicated [FocusScopeNode], rather than the ambient one, so
+  /// [FocusTraversalGroup]'s Tab/Shift+Tab cycling stays confined to the
+  /// popover's own focusable controls (buttons, close button) and never
+  /// wanders onto the highlighted app element's focusables — a documented
+  /// limitation, not a bug; see the plan's design decision #10.
+  final FocusScopeNode _popoverFocusScope = FocusScopeNode(
+    debugLabel: 'driverjs-popover',
+  );
 
   @override
   void initState() {
@@ -365,6 +397,16 @@ class DriverOverlayState extends State<DriverOverlay>
     } else {
       _popoverFade.value = 1;
     }
+
+    // "On popover render, focus the first focusable control automatically"
+    // (design decision #10). Deferred to a post-frame callback: the
+    // popover's own focusable descendants (buttons, close button) haven't
+    // built into `_popoverFocusScope` yet on this same call — `setState`
+    // above only *schedules* that rebuild.
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _popoverFocusScope.nextFocus();
+    });
   }
 
   /// Removes the popover immediately (no fade-out — matches
@@ -482,42 +524,81 @@ class DriverOverlayState extends State<DriverOverlay>
     _stopTicker();
     _dimFade.dispose();
     _popoverFade.dispose();
+    _popoverFocusScope.dispose();
     super.dispose();
+  }
+
+  /// Key-up routing (design decision #10), ported from `onKeyup` in
+  /// `events.ts`. `allowKeyboardControl` gates everything; beyond that this
+  /// widget only identifies *which* key fired and forwards to the matching
+  /// callback — `driver.dart`'s handlers own every semantic guard
+  /// (mid-transition no-op, `allowClose`, first/last-step reachability).
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (!widget.allowKeyboardControl) return KeyEventResult.ignored;
+    if (event is! KeyUpEvent) return KeyEventResult.ignored;
+
+    switch (event.logicalKey) {
+      case LogicalKeyboardKey.escape:
+        widget.onEscape();
+        return KeyEventResult.handled;
+      case LogicalKeyboardKey.arrowRight:
+        widget.onArrowRight();
+        return KeyEventResult.handled;
+      case LogicalKeyboardKey.arrowLeft:
+        widget.onArrowLeft();
+        return KeyEventResult.handled;
+      default:
+        return KeyEventResult.ignored;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final popoverContent = _popoverContent;
-    return Stack(
-      children: [
-        FadeTransition(
-          opacity: _dimFade,
-          child: _CutoutWidget(
-            stageRect: _stageRect,
-            overlayColor: _theme.overlayColor,
-            overlayOpacity: _theme.overlayOpacity,
-            stagePadding: _theme.stagePadding,
-            stageRadius: _theme.stageRadius,
-            disableActiveInteraction: _disableActiveInteraction,
-            onOverlayTap: () => _onOverlayTap(),
-          ),
-        ),
-        if (popoverContent != null)
+    return FocusScope(
+      autofocus: true,
+      onKeyEvent: _handleKeyEvent,
+      child: Stack(
+        children: [
           FadeTransition(
-            opacity: _popoverFade,
-            child: PopoverPositioner(
-              element: _popoverElement,
-              side: _popoverSide,
-              align: _popoverAlign,
-              offset: _popoverOffset,
-              padding: _popoverPadding,
-              centered: _popoverCentered,
-              arrowColor: _popoverArrowColor,
-              arrowSize: _theme.popoverArrowSize,
-              child: popoverContent,
+            opacity: _dimFade,
+            child: _CutoutWidget(
+              stageRect: _stageRect,
+              overlayColor: _theme.overlayColor,
+              overlayOpacity: _theme.overlayOpacity,
+              stagePadding: _theme.stagePadding,
+              stageRadius: _theme.stageRadius,
+              disableActiveInteraction: _disableActiveInteraction,
+              onOverlayTap: () => _onOverlayTap(),
             ),
           ),
-      ],
+          if (popoverContent != null)
+            FadeTransition(
+              opacity: _popoverFade,
+              // A dedicated `FocusTraversalGroup` + `FocusScope` confines
+              // Tab/Shift+Tab cycling to just the popover's own focusable
+              // controls (design decision #10) — the surrounding
+              // `FocusScope` above still owns Escape/arrow-key routing, but
+              // traversal order inside it stops at this boundary.
+              child: FocusTraversalGroup(
+                child: FocusScope(
+                  node: _popoverFocusScope,
+                  child: PopoverPositioner(
+                    element: _popoverElement,
+                    side: _popoverSide,
+                    align: _popoverAlign,
+                    offset: _popoverOffset,
+                    padding: _popoverPadding,
+                    centered: _popoverCentered,
+                    arrowColor: _popoverArrowColor,
+                    arrowSize: _theme.popoverArrowSize,
+                    child: popoverContent,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

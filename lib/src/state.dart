@@ -57,6 +57,15 @@ class DriverState {
   /// itself against to know to stop mutating state.
   Object? transitionToken;
 
+  /// Whatever had focus right before `drive()` most recently highlighted a
+  /// step — `__activeOnDestroyed` in context.ts (captured fresh on every
+  /// `drive()` call, not just tour start, so it always reflects focus right
+  /// before the *currently* active step, e.g. whichever popover button was
+  /// clicked to navigate there). `destroy()` restores focus here once
+  /// teardown finishes. `null` for a bare, tour-less `highlight()` — only
+  /// `drive()` captures it, mirroring JS.
+  FocusNode? focusToRestore;
+
   /// Clears every field back to its initial value, called on `destroy()`.
   void reset() {
     isInitialized = false;
@@ -71,5 +80,27 @@ class DriverState {
     internalPreviousStep = null;
     activeStagePosition = null;
     transitionToken = null;
+    focusToRestore = null;
   }
+
+  /// A shallow snapshot of every field, taken right before [reset] clears
+  /// them — mirrors `const stateBeforeDestroy = ctx.getState()` in
+  /// `driver.ts`'s `destroy()`, used to give `onDeselected`/`onDestroyed`
+  /// hooks a [DriverState] that still reflects the tour that just ended,
+  /// even though the live [DriverState] this instance itself has already
+  /// been reset by the time those hooks run.
+  DriverState copy() => DriverState()
+    ..isInitialized = isInitialized
+    ..activeIndex = activeIndex
+    ..activeElement = activeElement
+    ..activeStep = activeStep
+    ..previousElement = previousElement
+    ..previousStep = previousStep
+    ..internalActiveElement = internalActiveElement
+    ..internalActiveStep = internalActiveStep
+    ..internalPreviousElement = internalPreviousElement
+    ..internalPreviousStep = internalPreviousStep
+    ..activeStagePosition = activeStagePosition
+    ..transitionToken = transitionToken
+    ..focusToRestore = focusToRestore;
 }

@@ -292,6 +292,14 @@ void main() {
           popover: const DriverPopover(
             title: 'A Title',
             description: 'A description',
+            // `Driver.highlight()` defaults a bare popover to buttonless
+            // (design decision #6) — set explicitly since this test is
+            // about the button *widgets* rendering, not that default.
+            showButtons: [
+              DriverButton.next,
+              DriverButton.previous,
+              DriverButton.close,
+            ],
           ),
         ),
       );
@@ -338,6 +346,7 @@ void main() {
           element: key,
           popover: DriverPopover(
             title: 'T',
+            showButtons: const [DriverButton.next],
             disableButtons: const [DriverButton.next],
             onNextClick: (_, _, _) => nextClicked = true,
           ),
@@ -447,6 +456,11 @@ void main() {
             element: key,
             popover: DriverPopover(
               title: 'T',
+              // The footer (where `extraFooterChildren` render) only
+              // builds when at least one button or progress shows —
+              // `Driver.highlight()` otherwise defaults to buttonless
+              // (design decision #6).
+              showButtons: const [DriverButton.next],
               onPopoverRender: (data, opts) {
                 // Short text: the footer row (progress + prev/next +
                 // extras) isn't scrollable/wrapped, matching popover.css's

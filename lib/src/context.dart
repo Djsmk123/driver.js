@@ -56,6 +56,15 @@ class DriverContext {
   /// call back into the driver (e.g. `opts.driver.destroy()`).
   Driver? driver;
 
+  /// A user-initiated close request — Escape, the popover's `x`, an
+  /// overlay-click `close` behavior — routed through here rather than
+  /// straight to `driver.destroy()`, because those callers need
+  /// `withHook: true` semantics (`onDestroyStarted` gets a chance to
+  /// intercept) while the public, parameterless `Driver.destroy()` method
+  /// always skips that hook. Set once by the `driver()` factory alongside
+  /// [driver] itself; `_DriverImpl` is the only thing that ever assigns it.
+  void Function()? requestUserClose;
+
   final Map<DriverEvent, void Function()> _listeners = {};
 
   /// Registers (replacing any previous registration) the callback for
