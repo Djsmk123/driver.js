@@ -16,17 +16,25 @@ export 'src/config.dart'
         DriverConfig,
         DriverHook,
         DriverHookOpts,
-        DriverPopoverBuilder,
         OverlayClickBehavior,
         OverlayClickBehaviorClose,
         OverlayClickBehaviorCustom,
-        OverlayClickBehaviorNextStep,
-        PopoverRenderHook;
+        OverlayClickBehaviorNextStep;
 export 'src/driver.dart' show Driver, driver;
 export 'src/position.dart' show PopoverAlignment, PopoverPlacement, Side;
 export 'src/state.dart' show DriverState;
 export 'src/step.dart' show DriveStep;
 export 'src/theme.dart' show DriverTheme;
+
+// M2: popover.
+export 'src/popover.dart'
+    show
+        DriverPopover,
+        DriverPopoverBuilder,
+        DriverPopoverData,
+        PopoverRenderHook;
+export 'src/popover_widget.dart'
+    show DriverPopoverContent, PopoverPositioner, RenderPopoverPositioner;
 
 // Internal-only: context.dart, events.dart, highlight.dart, overlay_widget.dart,
 // stage.dart, utils.dart. These implement the public surface above but

@@ -1,11 +1,15 @@
 /// The mounted overlay: a full-screen dim with a rounded-rect cutout around
-/// the highlighted element, animated between targets. Ported from
-/// `overlay.ts` (the SVG cutout + `transitionStage`/`trackActiveElement`)
-/// and `click.ts` (the capture-first click handling), adapted to Flutter's
-/// render-object/hit-testing model per design decisions #2-#4 in the plan.
+/// the highlighted element, animated between targets, plus (M2) the
+/// popover positioned against it. Ported from `overlay.ts` (the SVG cutout
+/// + `transitionStage`/`trackActiveElement`) and `click.ts` (the
+/// capture-first click handling), adapted to Flutter's render-object/hit-
+/// testing model per design decisions #2-#4 in the plan.
 ///
-/// The popover widget itself is out of scope for M1 (see `highlight.dart`);
-/// this file only owns the dim + cutout + its animation.
+/// This widget deliberately stays ignorant of *how* the popover's content
+/// or placement inputs are decided (that's `highlight.dart`'s job, mirroring
+/// `renderStepPopover`/`repositionStepPopover` in `step.ts`) — it only owns
+/// the dim + cutout + popover positioner and their animations, the same
+/// division M1 drew around the cutout alone.
 library;
 
 import 'package:flutter/gestures.dart';
@@ -13,6 +17,8 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
+import 'popover_widget.dart';
+import 'position.dart';
 import 'stage.dart';
 import 'theme.dart';
 import 'utils.dart';
@@ -254,13 +260,31 @@ class DriverOverlay extends StatefulWidget {
 }
 
 class DriverOverlayState extends State<DriverOverlay>
-    with SingleTickerProviderStateMixin<DriverOverlay> {
+    with TickerProviderStateMixin<DriverOverlay> {
   late Rect _stageRect = widget.initialStageRect;
   late DriverTheme _theme = widget.theme;
   late bool _disableActiveInteraction = widget.disableActiveInteraction;
   VoidCallback _onOverlayTap = () {};
 
   late final AnimationController _dimFade = AnimationController(
+    vsync: this,
+    duration: widget.fadeInDuration,
+  );
+
+  // Popover state (M2). Unlike `_dimFade` (played once on mount), this
+  // fade is replayed on *every* popover render — "the popover fades in on
+  // every step render" (design decision #3) — since a fresh popover
+  // replaces the previous one's content outright rather than cross-fading.
+  Widget? _popoverContent;
+  Rect _popoverElement = Rect.zero;
+  bool _popoverCentered = false;
+  Side _popoverSide = Side.bottom;
+  PopoverAlignment _popoverAlign = PopoverAlignment.start;
+  double _popoverOffset = 20;
+  double _popoverPadding = 10;
+  Color _popoverArrowColor = const Color(0xFFFFFFFF);
+
+  late final AnimationController _popoverFade = AnimationController(
     vsync: this,
     duration: widget.fadeInDuration,
   );
@@ -303,6 +327,64 @@ class DriverOverlayState extends State<DriverOverlay>
     setState(() => _stageRect = rect);
   }
 
+  /// Shows (or replaces) the popover, mirroring `renderPopover` in
+  /// `popover.ts` minus everything `highlight.dart` already resolved
+  /// before calling this — [content] is the fully-built widget (default
+  /// content or a `DriverPopoverBuilder`'s result), and [element]/
+  /// [centered]/[side]/[align]/[offset]/[padding] are exactly
+  /// [resolvePopoverPlacement]'s parameters, computed fresh by the caller
+  /// (immediately, or at the halfway point — see [transitionStage]'s
+  /// `onHalfway`).
+  ///
+  /// Replays [_popoverFade] from 0 every call — the popover's fade-in is
+  /// per-render, not per-mount, unlike [_dimFade].
+  void showPopover({
+    required Widget content,
+    required Rect element,
+    required bool centered,
+    required Side side,
+    required PopoverAlignment align,
+    required double offset,
+    required double padding,
+    required Color arrowColor,
+  }) {
+    setState(() {
+      _popoverContent = content;
+      _popoverElement = element;
+      _popoverCentered = centered;
+      _popoverSide = side;
+      _popoverAlign = align;
+      _popoverOffset = offset;
+      _popoverPadding = padding;
+      _popoverArrowColor = arrowColor;
+    });
+    if (widget.animateFadeIn && widget.fadeInDuration > Duration.zero) {
+      _popoverFade
+        ..value = 0
+        ..forward();
+    } else {
+      _popoverFade.value = 1;
+    }
+  }
+
+  /// Removes the popover immediately (no fade-out — matches
+  /// `hidePopover`'s `display: none` in `popover.ts`, called at the start
+  /// of every `transferHighlight` before the new one is (maybe delayed)
+  /// rendered).
+  void hidePopover() {
+    if (_popoverContent == null) return;
+    setState(() => _popoverContent = null);
+  }
+
+  /// Re-anchors an already-visible popover to [element]'s current rect
+  /// without touching its content or replaying the fade — used by
+  /// `refreshActiveHighlight` (mirrors `repositionStepPopover` there). A
+  /// no-op while no popover is showing.
+  void updatePopoverAnchor(Rect element) {
+    if (_popoverContent == null) return;
+    setState(() => _popoverElement = element);
+  }
+
   /// The exact port of `transitionStage`'s animation loop (design decision
   /// #3): each tick re-reads the *live* target rect via [resolveTarget] —
   /// so a target still settling into view after a scroll keeps getting
@@ -315,12 +397,23 @@ class DriverOverlayState extends State<DriverOverlay>
   /// to `resolveTarget()` and calls [onSettled] synchronously, matching
   /// `highlight.ts`'s non-animated branch (which calls `trackActiveElement`
   /// immediately instead of scheduling frames).
+  ///
+  /// [onHalfway], if given, fires exactly once, the first tick where
+  /// elapsed time reaches half of [duration] — this is the "wait for the
+  /// animation to finish" branch's halfway point from `transferHighlight`
+  /// in `highlight.ts` (`isHalfwayThrough = timeRemaining <= duration /
+  /// 2`), which `highlight.dart` uses to delay a non-first popover's
+  /// render until the stage transition is half done. Never called from the
+  /// non-animated snap branch above — a caller that wants an immediate
+  /// popover render on that path calls it itself before invoking this
+  /// method, exactly as `highlight.dart` does.
   void transitionStage({
     required Rect from,
     required Rect Function() resolveTarget,
     required Duration duration,
     required bool animate,
     required VoidCallback onSettled,
+    VoidCallback? onHalfway,
   }) {
     _stopTicker();
 
@@ -333,8 +426,13 @@ class DriverOverlayState extends State<DriverOverlay>
     setState(() => _stageRect = from);
 
     final durationMs = duration.inMicroseconds / 1000;
+    var halfwayFired = false;
     _ticker = createTicker((elapsed) {
       final elapsedMs = elapsed.inMicroseconds / 1000;
+      if (!halfwayFired && onHalfway != null && elapsedMs >= durationMs / 2) {
+        halfwayFired = true;
+        onHalfway();
+      }
       if (elapsedMs >= durationMs) {
         _stopTicker();
         setState(() => _stageRect = resolveTarget());
@@ -383,22 +481,43 @@ class DriverOverlayState extends State<DriverOverlay>
   void dispose() {
     _stopTicker();
     _dimFade.dispose();
+    _popoverFade.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: _dimFade,
-      child: _CutoutWidget(
-        stageRect: _stageRect,
-        overlayColor: _theme.overlayColor,
-        overlayOpacity: _theme.overlayOpacity,
-        stagePadding: _theme.stagePadding,
-        stageRadius: _theme.stageRadius,
-        disableActiveInteraction: _disableActiveInteraction,
-        onOverlayTap: () => _onOverlayTap(),
-      ),
+    final popoverContent = _popoverContent;
+    return Stack(
+      children: [
+        FadeTransition(
+          opacity: _dimFade,
+          child: _CutoutWidget(
+            stageRect: _stageRect,
+            overlayColor: _theme.overlayColor,
+            overlayOpacity: _theme.overlayOpacity,
+            stagePadding: _theme.stagePadding,
+            stageRadius: _theme.stageRadius,
+            disableActiveInteraction: _disableActiveInteraction,
+            onOverlayTap: () => _onOverlayTap(),
+          ),
+        ),
+        if (popoverContent != null)
+          FadeTransition(
+            opacity: _popoverFade,
+            child: PopoverPositioner(
+              element: _popoverElement,
+              side: _popoverSide,
+              align: _popoverAlign,
+              offset: _popoverOffset,
+              padding: _popoverPadding,
+              centered: _popoverCentered,
+              arrowColor: _popoverArrowColor,
+              arrowSize: _theme.popoverArrowSize,
+              child: popoverContent,
+            ),
+          ),
+      ],
     );
   }
 }

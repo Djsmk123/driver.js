@@ -12,6 +12,7 @@ library;
 import 'package:flutter/widgets.dart';
 
 import 'driver.dart';
+import 'popover.dart';
 import 'state.dart';
 import 'step.dart';
 import 'theme.dart';
@@ -80,19 +81,6 @@ final class OverlayClickBehaviorCustom extends OverlayClickBehavior {
   const OverlayClickBehaviorCustom(this.handler);
   final DriverHook handler;
 }
-
-/// Placeholder for M2's popover builder signature (`DriverPopoverBuilder`
-/// in the plan's public API sketch: `Widget Function(DriverPopoverData
-/// data, DriverHookOpts opts)`). Typed as a plain zero-arg widget builder
-/// for now, since `DriverPopoverData` doesn't exist until M2 — the field
-/// exists on `DriverConfig` today only so the config surface matches the
-/// plan; nothing reads it in M1.
-typedef DriverPopoverBuilder = Widget Function();
-
-/// Placeholder for M2's `onPopoverRender` hook signature
-/// (`(popover: PopoverDOM, opts: HookOpts) => void` in `context.ts`).
-typedef PopoverRenderHook =
-    void Function(Object popoverData, DriverHookOpts opts);
 
 /// Tour/highlight configuration, mirroring `Config` in `context.ts`. Every
 /// default below matches `createConfigStore`'s `configure()` defaults
@@ -188,7 +176,8 @@ class DriverConfig {
   /// Corner radius of the stage cutout (clamped by `stage.dart`).
   final double stageRadius;
 
-  /// Gap kept between the stage and the popover. M2 scope.
+  /// Gap kept between the stage and the popover, added to [stagePadding]
+  /// to form `resolvePopoverPlacement`'s `offset` (see `highlight.dart`).
   final double popoverOffset;
 
   /// When `true`, the highlighted element itself doesn't receive taps
@@ -213,14 +202,20 @@ class DriverConfig {
   /// Whether Escape/arrow-key navigation is active. M3 scope.
   final bool allowKeyboardControl;
 
-  /// Which buttons the default popover footer shows. M3 scope.
+  /// Which buttons the default popover footer shows, unless overridden
+  /// per-step by `DriverPopover.showButtons`. Reachability-aware quirks
+  /// (an empty *step*-level list showing none vs. an empty *config*-level
+  /// list keeping all — design decision #6) are M3 scope; M2's
+  /// `resolvePopoverData` just takes this value as-is.
   final List<DriverButton> showButtons;
 
-  /// Which buttons are rendered but disabled. M3 scope.
+  /// Which buttons are rendered but disabled, unless overridden per-step
+  /// by `DriverPopover.disableButtons`. The tour-only "previous is
+  /// force-disabled on the first reachable step" quirk is M3 scope.
   final List<DriverButton> disableButtons;
 
-  /// Whether the default popover footer shows a progress indicator. M3
-  /// scope.
+  /// Whether the default popover footer shows a progress indicator, unless
+  /// overridden per-step by `DriverPopover.showProgress`.
   final bool showProgress;
 
   final String? progressText;
@@ -232,7 +227,10 @@ class DriverConfig {
   /// uses `DriverTheme`'s own defaults.
   final DriverTheme? theme;
 
-  /// Fully replaces the default popover content. M2 scope.
+  /// Fully replaces the default popover content, unless a more specific
+  /// `DriverPopover.popoverBuilder`/`DriverTheme.popoverBuilder` wins (see
+  /// design decision #8's config/step/theme precedence, resolved in
+  /// `highlight.dart`).
   final DriverPopoverBuilder? popoverBuilder;
 
   /// The [BuildContext] used to look up the root [Overlay] the highlight
@@ -240,7 +238,9 @@ class DriverConfig {
   /// from the first step/hint whose element resolves to a mounted context.
   final BuildContext? context;
 
-  /// Called after the popover is (re)rendered. M2 scope.
+  /// Called with the resolved [DriverPopoverData] before the popover is
+  /// laid out, so mutating it here (texts, button lists,
+  /// `extraFooterChildren`) changes what actually renders.
   final PopoverRenderHook? onPopoverRender;
 
   final DriverHook? onHighlightStarted;

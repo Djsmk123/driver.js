@@ -7,6 +7,7 @@
 library;
 
 import 'config.dart';
+import 'popover.dart';
 
 /// One step of a tour, or the argument to `Driver.highlight()` for a
 /// single, tour-less highlight.
@@ -32,10 +33,10 @@ class DriveStep {
   /// resolves to nothing (see `highlight.dart`).
   final Object? element;
 
-  /// Per-step popover configuration. Typed loosely as a placeholder until
-  /// M2 introduces `DriverPopover` (see the plan's public API sketch) —
-  /// M1 does not render a popover at all.
-  final Object? popover;
+  /// Per-step popover configuration. `null` means this step highlights
+  /// without ever showing a popover (driver.js's bare, buttonless
+  /// `highlight()` usage — see design decision #6).
+  final DriverPopover? popover;
 
   /// Overrides `DriverConfig.disableActiveInteraction` for this step.
   final bool? disableActiveInteraction;
