@@ -30,17 +30,26 @@ class LogPanelController extends ChangeNotifier {
 }
 
 /// Renders [controller]'s entries in a collapsible card, newest first.
+///
+/// Mobile-first default: [initiallyExpanded] defaults to `false` so the
+/// panel doesn't dominate a phone-sized viewport; callers on wide screens
+/// (with room to spare) can pass `true` to start expanded.
 class LogPanel extends StatefulWidget {
-  const LogPanel({super.key, required this.controller});
+  const LogPanel({
+    super.key,
+    required this.controller,
+    this.initiallyExpanded = false,
+  });
 
   final LogPanelController controller;
+  final bool initiallyExpanded;
 
   @override
   State<LogPanel> createState() => _LogPanelState();
 }
 
 class _LogPanelState extends State<LogPanel> {
-  bool _expanded = true;
+  late bool _expanded = widget.initiallyExpanded;
 
   @override
   Widget build(BuildContext context) {

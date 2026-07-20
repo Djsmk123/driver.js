@@ -115,10 +115,27 @@ final tourGroup = ScenarioGroup(
             steps: [
               DriveStep(
                 element: ctx.keys.card1,
-                popover: const DriverPopover(
+                popover: DriverPopover(
                   title: 'Loading…',
-                  description: 'This step auto-advances in 1.5 seconds.',
-                  showButtons: [DriverButton.close],
+                  descriptionWidget: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: EdgeInsets.only(top: 2),
+                        child: SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text('This step auto-advances in 1.5 seconds.'),
+                      ),
+                    ],
+                  ),
+                  showButtons: const [DriverButton.close],
                 ),
                 onHighlighted: (element, step, opts) {
                   ctx.log('tour-async-step: waiting 1.5s to auto-advance');

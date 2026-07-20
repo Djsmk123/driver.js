@@ -1,6 +1,9 @@
 /// The shared demo "stage" — the content every scenario highlights/tours
-/// over. Exposes [StageKeys] so scenario code can build `DriveStep`s that
-/// point at specific cards without reaching into the widget tree itself.
+/// over. Mirrors driver.js's official playground `Stage.astro` (same
+/// headline copy, section order, and filler paragraphs) rebuilt in
+/// Flutter/Material terms. Exposes [StageKeys] so scenario code can build
+/// `DriveStep`s that point at specific elements without reaching into the
+/// widget tree itself.
 library;
 
 import 'package:flutter/material.dart';
@@ -33,6 +36,24 @@ class StageKeys {
   List<GlobalKey> get cards => [card1, card2, card3, card4, card5, card6];
 }
 
+const _loremFiller =
+    "Lorem ipsum dolor sit amet, consectetur adipisicing elit. Animi "
+    'blanditiis consectetur ea eligendi id in inventore ipsa iure '
+    'laudantium libero, minus molestias necessitatibus nesciunt non '
+    'omnis, quasi recusandae tempore voluptates!';
+
+const _scrollParagraphs = [
+  'First — scroll down inside this box to reach the highlighted paragraph.',
+  'Second — Lorem ipsum dolor sit amet, consectetur adipisicing elit.',
+  'Third — even nested scrollable elements are handled correctly.',
+  'Fourth — Lorem ipsum dolor sit amet, consectetur adipisicing elit.',
+  'Fifth — Lorem ipsum dolor sit amet, consectetur adipisicing elit.',
+  'Sixth — Lorem ipsum dolor sit amet, consectetur adipisicing elit.',
+  'Seventh — Lorem ipsum dolor sit amet, consectetur adipisicing elit.',
+  'Eighth — Lorem ipsum dolor sit amet, consectetur adipisicing elit.',
+  'Ninth — Lorem ipsum dolor sit amet, consectetur adipisicing elit.',
+];
+
 /// The scrollable page content every scenario runs its tour/highlight over.
 /// Tall enough to require page scrolling on its own (for off-screen /
 /// scroll-into-view scenarios), with a nested ~300px [ListView] (for
@@ -57,6 +78,7 @@ class StagePageState extends State<StagePage> {
   @override
   Widget build(BuildContext context) {
     final keys = widget.keys;
+    final textTheme = Theme.of(context).textTheme;
 
     return ListView(
       // Generous cache extent: the off-screen/scroll-into-view scenarios
@@ -69,93 +91,74 @@ class StagePageState extends State<StagePage> {
       // keeping everything built is cheap.
       // ignore: deprecated_member_use
       cacheExtent: 4000,
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       children: [
-        Text(
-          key: keys.header,
-          'driverjs demo stage',
-          style: Theme.of(context).textTheme.headlineMedium,
+        Center(
+          child: Column(
+            key: keys.header,
+            children: [
+              Text.rich(
+                TextSpan(
+                  text: 'driver.js ',
+                  style: textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                  children: [TextSpan(text: 'v1', style: textTheme.bodyMedium)],
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                "A lightweight, no-dependency library to drive the user's "
+                'focus across the page.',
+                textAlign: TextAlign.center,
+                style: textTheme.bodyLarge,
+              ),
+            ],
+          ),
         ),
+        const SizedBox(height: 32),
+        Text('Highlight any element', style: textTheme.titleLarge),
         const SizedBox(height: 8),
         Text(
           key: keys.intro,
-          'This page is the shared stage every scenario in the sidebar runs '
-          'against. Pick a scenario to see driverjs highlight, tour, and hint '
-          'this content live.',
-          style: Theme.of(context).textTheme.bodyLarge,
+          'Highlight anything, anywhere on the page — literally anything, '
+          'including SVG portions, scrollable items and off-screen '
+          'elements. Pick an example from the sidebar to see it in action.',
+          style: textTheme.bodyMedium,
         ),
         const SizedBox(height: 24),
         Wrap(
-          spacing: 16,
-          runSpacing: 16,
+          spacing: 12,
+          runSpacing: 12,
           children: [
-            _StageCard(
-              key: keys.card1,
-              title: 'Card One',
-              subtitle: 'The first highlightable card.',
-              icon: Icons.looks_one,
-            ),
-            _StageCard(
-              key: keys.card2,
-              title: 'Card Two',
-              subtitle: 'A second target for tours.',
-              icon: Icons.looks_two,
-            ),
-            _StageCard(
-              key: keys.card3,
-              title: 'Card Three',
-              subtitle: 'Useful for the transition scenario.',
-              icon: Icons.looks_3,
-            ),
-            _StageCard(
-              key: keys.card4,
-              title: 'Card Four',
-              subtitle: 'Try advanceOnClick on me.',
-              icon: Icons.looks_4,
-              onTap: () {},
-            ),
-            _StageCard(
-              key: keys.card5,
-              title: 'Card Five',
-              subtitle: 'Popover position matrix target.',
-              icon: Icons.looks_5,
-            ),
-            _StageCard(
-              key: keys.card6,
-              title: 'Card Six',
-              subtitle: 'The last of the six cards.',
-              icon: Icons.looks_6,
-            ),
+            _StageButton(stageKey: keys.card1, label: 'Card One'),
+            _StageButton(stageKey: keys.card2, label: 'Card Two'),
+            _StageButton(stageKey: keys.card3, label: 'Card Three'),
+            _StageButton(stageKey: keys.card4, label: 'Card Four'),
+            _StageButton(stageKey: keys.card5, label: 'Card Five'),
+            _StageButton(stageKey: keys.card6, label: 'Card Six'),
           ],
         ),
         const SizedBox(height: 24),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              key: keys.featureList,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
-                Text(
-                  'Feature checklist',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                SizedBox(height: 8),
-                _FeatureBullet('Single-element highlight'),
-                _FeatureBullet('Multi-step guided tours'),
-                _FeatureBullet('Popovers with custom content'),
-                _FeatureBullet('Pulsing hint beacons'),
-                _FeatureBullet('Keyboard navigation'),
-              ],
-            ),
-          ),
+        Column(
+          key: keys.featureList,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: const [
+            _Bullet('Written in TypeScript'),
+            _Bullet('Lightweight — only ~5kb gzipped'),
+            _Bullet('No dependencies'),
+            _Bullet('MIT Licensed'),
+          ],
+        ),
+        const SizedBox(height: 16),
+        const _Bullet(
+          'Watch the event log below to follow the hooks fired by an '
+          'example.',
         ),
         const SizedBox(height: 24),
-        Text(
-          'Inner scrollable region',
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        const SizedBox(height: 8),
+        Text(_loremFiller, style: textTheme.bodyMedium),
+        const SizedBox(height: 32),
         Container(
           key: keys.innerScrollList,
           height: 300,
@@ -167,136 +170,89 @@ class StagePageState extends State<StagePage> {
             // Same reasoning as the outer ListView's cacheExtent above.
             // ignore: deprecated_member_use
             cacheExtent: 2000,
-            padding: const EdgeInsets.all(8),
-            itemCount: 20,
+            padding: const EdgeInsets.all(16),
+            itemCount: _scrollParagraphs.length,
             itemBuilder: (context, index) {
               return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: ListTile(
-                  key: index == 3 ? keys.innerScrollItem3 : null,
-                  dense: true,
-                  tileColor: Theme.of(
-                    context,
-                  ).colorScheme.surfaceContainerHighest,
-                  title: Text('Inner scroll item ${index + 1}'),
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  key: index == 2 ? keys.innerScrollItem3 : null,
+                  _scrollParagraphs[index],
+                  style: textTheme.bodyMedium,
                 ),
               );
             },
           ),
         ),
-        const SizedBox(height: 24),
-        Text(
-          'Late-mounted element slot',
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 32),
+        Text(_loremFiller, style: textTheme.bodyMedium),
+        const SizedBox(height: 32),
         SizedBox(
           key: keys.lateElementSlot,
-          height: 64,
           child: _lateElementMounted
-              ? Card(
+              ? Text(
                   key: keys.lateElement,
-                  color: Theme.of(context).colorScheme.tertiaryContainer,
-                  child: const ListTile(
-                    leading: Icon(Icons.bolt),
-                    title: Text('Late element'),
-                    subtitle: Text(
-                      'Mounted after a delay for waitForElement demos.',
-                    ),
-                  ),
+                  'Late element — mounted after a delay for waitForElement '
+                  'demos.',
+                  style: textTheme.bodyMedium,
                 )
-              : const Card(
-                  child: ListTile(
-                    leading: Icon(Icons.hourglass_empty),
-                    title: Text('(not mounted yet)'),
+              : Text(
+                  '(late element not mounted yet)',
+                  style: textTheme.bodyMedium?.copyWith(
+                    fontStyle: FontStyle.italic,
+                    color: Theme.of(context).disabledColor,
                   ),
                 ),
         ),
         const SizedBox(height: 32),
-        Text('Below the fold', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
         // Just enough trailing filler that the page itself scrolls, so
         // off-screen/scroll-into-view scenarios have something to prove.
         for (var i = 0; i < 6; i++)
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Card(
-              key: i == 4 ? widget.keys.belowFold : null,
-              child: ListTile(
-                leading: const Icon(Icons.article_outlined),
-                title: Text('Filler section ${i + 1}'),
-                subtitle: const Text(
-                  'Scroll-into-view target lives further down this page.',
-                ),
-              ),
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Text(
+              key: i == 4 ? keys.belowFold : null,
+              'Filler section ${i + 1} — scroll-into-view target lives '
+              'further down this page. $_loremFiller',
+              style: textTheme.bodyMedium,
             ),
           ),
-        const SizedBox(height: 48),
       ],
     );
   }
 }
 
-class _FeatureBullet extends StatelessWidget {
-  const _FeatureBullet(this.text);
+class _Bullet extends StatelessWidget {
+  const _Bullet(this.text);
 
   final String text;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.check_circle_outline, size: 16),
-          const SizedBox(width: 8),
-          Text(text),
+          const Text('•  '),
+          Expanded(child: Text(text)),
         ],
       ),
     );
   }
 }
 
-class _StageCard extends StatelessWidget {
-  const _StageCard({
-    super.key,
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    this.onTap,
-  });
+/// A plain outlined button — the Flutter equivalent of the original
+/// playground's unstyled `<button>Card One</button>` elements, not a
+/// Material icon-card.
+class _StageButton extends StatelessWidget {
+  const _StageButton({required this.stageKey, required this.label});
 
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final VoidCallback? onTap;
+  final GlobalKey stageKey;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 220,
-      child: Card(
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(icon, size: 28),
-                const SizedBox(height: 8),
-                Text(
-                  title,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 4),
-                Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+    return OutlinedButton(key: stageKey, onPressed: () {}, child: Text(label));
   }
 }

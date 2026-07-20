@@ -2,8 +2,31 @@
 library;
 
 import 'package:driverjs/driverjs.dart';
+import 'package:flutter/material.dart';
 
 import '../scenario.dart';
+
+/// A small spinner + caption used on steps whose popover is on screen for
+/// the entire `waitForElement` hold — without this the tour just looks
+/// stalled for the timeout duration rather than visibly waiting.
+Widget _waitingIndicator(String text) {
+  return Row(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const Padding(
+        padding: EdgeInsets.only(top: 2),
+        child: SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      ),
+      const SizedBox(width: 10),
+      Expanded(child: Text(text)),
+    ],
+  );
+}
 
 final advanceWaitGroup = ScenarioGroup(
   title: 'Advance & wait',
@@ -65,11 +88,12 @@ final advanceWaitGroup = ScenarioGroup(
             steps: [
               DriveStep(
                 element: ctx.keys.card1,
-                popover: const DriverPopover(
+                popover: DriverPopover(
                   title: 'Waiting for a late element',
-                  description:
-                      'Step 2 targets an element that mounts in '
-                      '~1.5s. Press Next to see the tour wait for it.',
+                  descriptionWidget: _waitingIndicator(
+                    'Step 2 targets an element that mounts in ~1.5s. '
+                    'Press Next to see the tour wait for it.',
+                  ),
                 ),
               ),
               DriveStep(
@@ -110,11 +134,12 @@ final advanceWaitGroup = ScenarioGroup(
             steps: [
               DriveStep(
                 element: ctx.keys.card1,
-                popover: const DriverPopover(
+                popover: DriverPopover(
                   title: 'About to skip a step',
-                  description:
-                      'Step 2 will never mount and times out '
-                      'after 1s, then gets skipped.',
+                  descriptionWidget: _waitingIndicator(
+                    'Step 2 will never mount and times out after 1s, '
+                    'then gets skipped.',
+                  ),
                 ),
               ),
               DriveStep(

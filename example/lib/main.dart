@@ -162,6 +162,10 @@ class _DemoShellState extends State<DemoShell> {
   Widget build(BuildContext context) {
     final isWide = MediaQuery.sizeOf(context).width >= _wideBreakpoint;
 
+    // Mobile-first base: a single scrollable-stage column with a Drawer for
+    // the scenario list and a log panel that starts collapsed so it doesn't
+    // dominate a phone-sized viewport. The wide two-pane layout below is an
+    // enhancement layered on top when there's room, not the starting point.
     final stageAndLog = Column(
       children: [
         Expanded(
@@ -169,7 +173,10 @@ class _DemoShellState extends State<DemoShell> {
         ),
         Padding(
           padding: const EdgeInsets.all(8),
-          child: LogPanel(controller: _logController),
+          child: LogPanel(
+            controller: _logController,
+            initiallyExpanded: isWide,
+          ),
         ),
       ],
     );
