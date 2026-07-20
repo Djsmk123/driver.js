@@ -36,13 +36,16 @@ class StageKeys {
   List<GlobalKey> get cards => [card1, card2, card3, card4, card5, card6];
 }
 
-const _loremFiller =
+/// Shared with [CupertinoStagePage] so both stage implementations show the
+/// identical filler copy rather than silently-diverging duplicates.
+const loremFiller =
     "Lorem ipsum dolor sit amet, consectetur adipisicing elit. Animi "
     'blanditiis consectetur ea eligendi id in inventore ipsa iure '
     'laudantium libero, minus molestias necessitatibus nesciunt non '
     'omnis, quasi recusandae tempore voluptates!';
 
-const _scrollParagraphs = [
+/// Shared with [CupertinoStagePage] — see [loremFiller].
+const scrollParagraphs = [
   'First — scroll down inside this box to reach the highlighted paragraph.',
   'Second — Lorem ipsum dolor sit amet, consectetur adipisicing elit.',
   'Third — even nested scrollable elements are handled correctly.',
@@ -157,7 +160,7 @@ class StagePageState extends State<StagePage> {
           'example.',
         ),
         const SizedBox(height: 24),
-        Text(_loremFiller, style: textTheme.bodyMedium),
+        Text(loremFiller, style: textTheme.bodyMedium),
         const SizedBox(height: 32),
         Container(
           key: keys.innerScrollList,
@@ -171,13 +174,13 @@ class StagePageState extends State<StagePage> {
             // ignore: deprecated_member_use
             cacheExtent: 2000,
             padding: const EdgeInsets.all(16),
-            itemCount: _scrollParagraphs.length,
+            itemCount: scrollParagraphs.length,
             itemBuilder: (context, index) {
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Text(
                   key: index == 2 ? keys.innerScrollItem3 : null,
-                  _scrollParagraphs[index],
+                  scrollParagraphs[index],
                   style: textTheme.bodyMedium,
                 ),
               );
@@ -185,7 +188,7 @@ class StagePageState extends State<StagePage> {
           ),
         ),
         const SizedBox(height: 32),
-        Text(_loremFiller, style: textTheme.bodyMedium),
+        Text(loremFiller, style: textTheme.bodyMedium),
         const SizedBox(height: 32),
         SizedBox(
           key: keys.lateElementSlot,
@@ -213,7 +216,7 @@ class StagePageState extends State<StagePage> {
             child: Text(
               key: i == 4 ? keys.belowFold : null,
               'Filler section ${i + 1} — scroll-into-view target lives '
-              'further down this page. $_loremFiller',
+              'further down this page. $loremFiller',
               style: textTheme.bodyMedium,
             ),
           ),
