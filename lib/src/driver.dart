@@ -30,6 +30,7 @@ import 'config.dart';
 import 'context.dart';
 import 'events.dart';
 import 'highlight.dart';
+import 'overlay_route.dart';
 import 'overlay_widget.dart';
 import 'registry.dart';
 import 'state.dart';
@@ -156,7 +157,8 @@ class _DriverImpl implements Driver {
 
   final GlobalKey<DriverOverlayState> _overlayKey =
       GlobalKey<DriverOverlayState>();
-  OverlayEntry? _entry;
+  DriverOverlayRoute? _entry;
+  NavigatorState? _entryNavigator;
   RefreshScheduler? _refreshScheduler;
   DriverMetricsObserver? _metricsObserver;
 
@@ -341,10 +343,10 @@ class _DriverImpl implements Driver {
   void _ensureMounted(BuildContext mountContext) {
     if (_entry != null) return;
 
-    final overlayState = Overlay.of(mountContext, rootOverlay: true);
+    final navigatorState = Navigator.of(mountContext, rootNavigator: true);
     final theme = _ctx.config.theme ?? const DriverTheme();
 
-    _entry = OverlayEntry(
+    final route = DriverOverlayRoute(
       builder: (context) {
         return Positioned.fill(
           child: DriverOverlay(
@@ -364,7 +366,9 @@ class _DriverImpl implements Driver {
         );
       },
     );
-    overlayState.insert(_entry!);
+    _entry = route;
+    _entryNavigator = navigatorState;
+    navigatorState.push(route);
     _ctx.state.isInitialized = true;
 
     // Design decision #12: increment the shared tour counter so any
@@ -742,9 +746,13 @@ class _DriverImpl implements Driver {
   /// `driver.ts`: when `true` and `config.onDestroyStarted` is set, the hook
   /// runs *instead of* tearing down — it has to call `driver.destroy()`
   /// itself (which always passes `withHook: false`) to actually close,
-  /// which is what makes a confirm-on-exit dialog possible. Teardown order
-  /// mirrors `driver.ts`'s `destroy()` exactly: cancel wait → detach
-  /// listeners → remove the overlay entry → snapshot state → reset state →
+  /// which is what makes a confirm-on-exit dialog possible (and, since the
+  /// overlay is mounted as a [DriverOverlayRoute] pushed onto the root
+  /// [Navigator] rather than a raw [OverlayEntry], such a dialog now
+  /// actually renders in front of the overlay instead of behind it — see
+  /// `overlay_route.dart`'s doc comment). Teardown order mirrors
+  /// `driver.ts`'s `destroy()` exactly: cancel wait → detach listeners →
+  /// remove the overlay route → snapshot state → reset state →
   /// `onDeselected` then `onDestroyed` (against the snapshot) → restore
   /// whatever had focus before the most recent `drive()` call.
   void _destroyInternal({required bool withHook}) {
@@ -775,8 +783,9 @@ class _DriverImpl implements Driver {
     _refreshScheduler?.dispose();
     _refreshScheduler = null;
 
-    _entry!.remove();
+    _entryNavigator!.removeRoute(_entry!);
     _entry = null;
+    _entryNavigator = null;
     // See the matching increment in `_ensureMounted` — this is the other
     // half of design decision #12's tour↔hints coordination.
     DriverRegistry.activeTourCount.value--;

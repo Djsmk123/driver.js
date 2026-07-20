@@ -254,7 +254,9 @@ class _CutoutWidget extends LeafRenderObjectWidget {
   }
 }
 
-/// The widget mounted into the root `OverlayEntry` (design decision #1).
+/// The widget mounted into the root `DriverOverlayRoute` (design decision
+/// #1; see `overlay_route.dart`'s doc comment for why a route rather than a
+/// raw `OverlayEntry`).
 /// Owns the stage-chase [Ticker] and the one-time dim fade-in; everything
 /// else (resolving elements, orchestrating hooks) lives in `highlight.dart`
 /// and calls back into this widget's [DriverOverlayState] via a

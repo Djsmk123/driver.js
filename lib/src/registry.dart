@@ -21,7 +21,7 @@ class DriverRegistry {
   DriverRegistry._();
 
   /// The number of currently-mounted tours (`Driver.drive()`/`highlight()`
-  /// calls that have inserted their overlay `OverlayEntry` and not yet been
+  /// calls that have pushed their overlay `DriverOverlayRoute` and not yet been
   /// `destroy()`ed). Incremented/decremented by `driver.dart`'s
   /// `_ensureMounted`/`_destroyInternal`; `hints.dart` only ever reads and
   /// listens, never writes, so two concurrent tours (or a tour plus a bare

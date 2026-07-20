@@ -1,6 +1,7 @@
 /// The public hints API (`hints()`/`Hints`/`HintsConfig`/`DriverHint`) and
 /// its controller implementation, ported from `hints.ts`. Structurally this
-/// mirrors `driver.dart`: its own root `OverlayEntry` (design decision #1,
+/// mirrors `driver.dart`: its own root overlay route (`DriverOverlayRoute`
+/// in `overlay_route.dart`, design decision #1,
 /// adapted — see [Hints.show]'s doc comment), a [RefreshScheduler] +
 /// [DriverMetricsObserver] pair for resize/frame-coalesced refresh (design
 /// decision #5), and an imperative `GlobalKey<State>` bridge into the
@@ -20,6 +21,7 @@ import 'package:flutter/widgets.dart';
 import 'config.dart';
 import 'events.dart';
 import 'hint_widgets.dart';
+import 'overlay_route.dart';
 import 'overlay_widget.dart' show RenderOverlayCutout;
 import 'popover.dart';
 import 'popover_widget.dart';
@@ -295,7 +297,8 @@ class _HintsImpl implements Hints {
   bool _isVisible = false;
   String? _activeId;
 
-  OverlayEntry? _entry;
+  DriverOverlayRoute? _entry;
+  NavigatorState? _entryNavigator;
   final GlobalKey<_HintsOverlayState> _overlayKey =
       GlobalKey<_HintsOverlayState>();
   RefreshScheduler? _refreshScheduler;
@@ -366,9 +369,9 @@ class _HintsImpl implements Hints {
   void _ensureMounted(BuildContext mountContext) {
     if (_entry != null) return;
 
-    final overlayState = Overlay.of(mountContext, rootOverlay: true);
+    final navigatorState = Navigator.of(mountContext, rootNavigator: true);
 
-    _entry = OverlayEntry(
+    final route = DriverOverlayRoute(
       builder: (context) {
         return Positioned.fill(
           child: _HintsOverlay(
@@ -382,7 +385,9 @@ class _HintsImpl implements Hints {
         );
       },
     );
-    overlayState.insert(_entry!);
+    _entry = route;
+    _entryNavigator = navigatorState;
+    navigatorState.push(route);
 
     _refreshScheduler = RefreshScheduler(refresh);
     _metricsObserver = DriverMetricsObserver(_refreshScheduler!);
@@ -428,8 +433,12 @@ class _HintsImpl implements Hints {
     _refreshScheduler?.dispose();
     _refreshScheduler = null;
 
-    _entry?.remove();
+    final entry = _entry;
+    if (entry != null) {
+      _entryNavigator?.removeRoute(entry);
+    }
     _entry = null;
+    _entryNavigator = null;
   }
 
   void _mountHints() {
@@ -768,7 +777,7 @@ class _HintsImpl implements Hints {
   }
 }
 
-/// The widget mounted into the hints' own root `OverlayEntry`. Owns the
+/// The widget mounted into the hints' own root `DriverOverlayRoute`. Owns the
 /// mounted beacons/popover/cutout as plain state, updated imperatively by
 /// [_HintsImpl] via this state's `GlobalKey` — the same
 /// controller-drives-a-`State` split `driver.dart`/`overlay_widget.dart`
