@@ -8,6 +8,8 @@ library;
 
 import 'package:flutter/material.dart';
 
+import 'app_design.dart';
+
 /// [GlobalKey]s for every element a scenario might want to highlight.
 /// Constructed once by [StagePage] and handed to scenarios via
 /// `ScenarioContext.keys`.
@@ -82,6 +84,7 @@ class StagePageState extends State<StagePage> {
   Widget build(BuildContext context) {
     final keys = widget.keys;
     final textTheme = Theme.of(context).textTheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return ListView(
       // Generous cache extent: the off-screen/scroll-into-view scenarios
@@ -94,23 +97,47 @@ class StagePageState extends State<StagePage> {
       // keeping everything built is cheap.
       // ignore: deprecated_member_use
       cacheExtent: 4000,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kSpacingMedium,
+        vertical: kSpacingLarge,
+      ),
       children: [
         Center(
           child: Column(
             key: keys.header,
             children: [
-              Text.rich(
-                TextSpan(
-                  text: 'driver.js ',
-                  style: textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Text(
+                    'driver.js',
+                    style: textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: colorScheme.primary,
+                    ),
                   ),
-                  children: [TextSpan(text: 'v1', style: textTheme.bodyMedium)],
-                ),
-                textAlign: TextAlign.center,
+                  const SizedBox(width: kSpacingSmall),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: kSpacingSmall,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: colorScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      'v1',
+                      style: textTheme.labelMedium?.copyWith(
+                        color: colorScheme.onPrimaryContainer,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: kSpacingSmall),
               Text(
                 "A lightweight, no-dependency library to drive the user's "
                 'focus across the page.',
@@ -120,9 +147,12 @@ class StagePageState extends State<StagePage> {
             ],
           ),
         ),
-        const SizedBox(height: 32),
-        Text('Highlight any element', style: textTheme.titleLarge),
-        const SizedBox(height: 8),
+        const SizedBox(height: kSpacingXLarge),
+        _SectionHeading(
+          icon: Icons.highlight_alt,
+          title: 'Highlight any element',
+        ),
+        const SizedBox(height: kSpacingSmall),
         Text(
           key: keys.intro,
           'Highlight anything, anywhere on the page — literally anything, '
@@ -130,10 +160,10 @@ class StagePageState extends State<StagePage> {
           'elements. Pick an example from the sidebar to see it in action.',
           style: textTheme.bodyMedium,
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: kSpacingLarge),
         Wrap(
-          spacing: 12,
-          runSpacing: 12,
+          spacing: kSpacingSmall + 4,
+          runSpacing: kSpacingSmall + 4,
           children: [
             _StageButton(stageKey: keys.card1, label: 'Card One'),
             _StageButton(stageKey: keys.card2, label: 'Card Two'),
@@ -143,7 +173,7 @@ class StagePageState extends State<StagePage> {
             _StageButton(stageKey: keys.card6, label: 'Card Six'),
           ],
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: kSpacingLarge),
         Column(
           key: keys.featureList,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -154,14 +184,14 @@ class StagePageState extends State<StagePage> {
             _Bullet('MIT Licensed'),
           ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: kSpacingMedium),
         const _Bullet(
           'Watch the event log below to follow the hooks fired by an '
           'example.',
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: kSpacingLarge),
         Text(loremFiller, style: textTheme.bodyMedium),
-        const SizedBox(height: 32),
+        const SizedBox(height: kSpacingXLarge),
         Container(
           key: keys.innerScrollList,
           height: 300,
@@ -173,11 +203,11 @@ class StagePageState extends State<StagePage> {
             // Same reasoning as the outer ListView's cacheExtent above.
             // ignore: deprecated_member_use
             cacheExtent: 2000,
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(kSpacingMedium),
             itemCount: scrollParagraphs.length,
             itemBuilder: (context, index) {
               return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
+                padding: const EdgeInsets.symmetric(vertical: kSpacingSmall),
                 child: Text(
                   key: index == 2 ? keys.innerScrollItem3 : null,
                   scrollParagraphs[index],
@@ -187,9 +217,9 @@ class StagePageState extends State<StagePage> {
             },
           ),
         ),
-        const SizedBox(height: 32),
+        const SizedBox(height: kSpacingXLarge),
         Text(loremFiller, style: textTheme.bodyMedium),
-        const SizedBox(height: 32),
+        const SizedBox(height: kSpacingXLarge),
         SizedBox(
           key: keys.lateElementSlot,
           child: _lateElementMounted
@@ -207,12 +237,12 @@ class StagePageState extends State<StagePage> {
                   ),
                 ),
         ),
-        const SizedBox(height: 32),
+        const SizedBox(height: kSpacingXLarge),
         // Just enough trailing filler that the page itself scrolls, so
         // off-screen/scroll-into-view scenarios have something to prove.
         for (var i = 0; i < 6; i++)
           Padding(
-            padding: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.only(bottom: kSpacingMedium),
             child: Text(
               key: i == 4 ? keys.belowFold : null,
               'Filler section ${i + 1} — scroll-into-view target lives '
@@ -220,6 +250,28 @@ class StagePageState extends State<StagePage> {
               style: textTheme.bodyMedium,
             ),
           ),
+      ],
+    );
+  }
+}
+
+/// A section heading with a small colored icon accent, replacing the plain
+/// `titleLarge` text that gave the stage no visual hierarchy beyond font
+/// size.
+class _SectionHeading extends StatelessWidget {
+  const _SectionHeading({required this.icon, required this.title});
+
+  final IconData icon;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Icon(icon, color: colorScheme.primary, size: 22),
+        const SizedBox(width: kSpacingSmall),
+        Text(title, style: Theme.of(context).textTheme.titleLarge),
       ],
     );
   }
@@ -233,11 +285,16 @@ class _Bullet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: kSpacingTiny),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('•  '),
+          Icon(
+            Icons.check_circle,
+            size: 18,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          const SizedBox(width: kSpacingSmall),
           Expanded(child: Text(text)),
         ],
       ),
@@ -245,9 +302,9 @@ class _Bullet extends StatelessWidget {
   }
 }
 
-/// A plain outlined button — the Flutter equivalent of the original
-/// playground's unstyled `<button>Card One</button>` elements, not a
-/// Material icon-card.
+/// The Flutter equivalent of the original playground's unstyled
+/// `<button>Card One</button>` elements — a subtly-filled tonal button
+/// (rather than a nearly-invisible outline) so it reads as clearly tappable.
 class _StageButton extends StatelessWidget {
   const _StageButton({required this.stageKey, required this.label});
 
@@ -256,6 +313,10 @@ class _StageButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return OutlinedButton(key: stageKey, onPressed: () {}, child: Text(label));
+    return FilledButton.tonal(
+      key: stageKey,
+      onPressed: () {},
+      child: Text(label),
+    );
   }
 }

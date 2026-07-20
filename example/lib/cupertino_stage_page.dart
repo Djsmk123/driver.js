@@ -8,6 +8,7 @@ library;
 
 import 'package:flutter/cupertino.dart';
 
+import 'app_design.dart';
 import 'stage_page.dart';
 
 /// See [StagePage] — structurally identical, Cupertino-styled. Exposes the
@@ -33,28 +34,54 @@ class CupertinoStagePageState extends State<CupertinoStagePage> {
   Widget build(BuildContext context) {
     final keys = widget.keys;
     final textTheme = CupertinoTheme.of(context).textTheme;
+    final primaryColor = CupertinoTheme.of(context).primaryColor;
 
     return ListView(
       // See StagePage's cacheExtent comment — same reasoning applies here.
       // ignore: deprecated_member_use
       cacheExtent: 4000,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kSpacingMedium,
+        vertical: kSpacingLarge,
+      ),
       children: [
         Center(
           child: Column(
             key: keys.header,
             children: [
-              Text.rich(
-                TextSpan(
-                  text: 'driver.js ',
-                  style: textTheme.navLargeTitleTextStyle.copyWith(
-                    fontWeight: FontWeight.w600,
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'driver.js',
+                    style: textTheme.navLargeTitleTextStyle.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: primaryColor,
+                    ),
                   ),
-                  children: [TextSpan(text: 'v1', style: textTheme.textStyle)],
-                ),
-                textAlign: TextAlign.center,
+                  const SizedBox(width: kSpacingSmall),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: primaryColor.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: kSpacingSmall,
+                        vertical: 2,
+                      ),
+                      child: Text(
+                        'v1',
+                        style: textTheme.textStyle.copyWith(
+                          color: primaryColor,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: kSpacingSmall),
               Text(
                 "A lightweight, no-dependency library to drive the user's "
                 'focus across the page.',
@@ -64,9 +91,15 @@ class CupertinoStagePageState extends State<CupertinoStagePage> {
             ],
           ),
         ),
-        const SizedBox(height: 32),
-        Text('Highlight any element', style: textTheme.navTitleTextStyle),
-        const SizedBox(height: 8),
+        const SizedBox(height: kSpacingXLarge),
+        Row(
+          children: [
+            Icon(CupertinoIcons.wand_stars, color: primaryColor, size: 20),
+            const SizedBox(width: kSpacingSmall),
+            Text('Highlight any element', style: textTheme.navTitleTextStyle),
+          ],
+        ),
+        const SizedBox(height: kSpacingSmall),
         Text(
           key: keys.intro,
           'Highlight anything, anywhere on the page — literally anything, '
@@ -74,10 +107,10 @@ class CupertinoStagePageState extends State<CupertinoStagePage> {
           'elements. Pick an example from the sidebar to see it in action.',
           style: textTheme.textStyle,
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: kSpacingLarge),
         Wrap(
-          spacing: 12,
-          runSpacing: 12,
+          spacing: kSpacingSmall + 4,
+          runSpacing: kSpacingSmall + 4,
           children: [
             _CupertinoStageButton(stageKey: keys.card1, label: 'Card One'),
             _CupertinoStageButton(stageKey: keys.card2, label: 'Card Two'),
@@ -87,25 +120,25 @@ class CupertinoStagePageState extends State<CupertinoStagePage> {
             _CupertinoStageButton(stageKey: keys.card6, label: 'Card Six'),
           ],
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: kSpacingLarge),
         Column(
           key: keys.featureList,
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
+          children: [
             _CupertinoBullet('Written in TypeScript'),
             _CupertinoBullet('Lightweight — only ~5kb gzipped'),
             _CupertinoBullet('No dependencies'),
             _CupertinoBullet('MIT Licensed'),
           ],
         ),
-        const SizedBox(height: 16),
-        const _CupertinoBullet(
+        const SizedBox(height: kSpacingMedium),
+        _CupertinoBullet(
           'Watch the event log below to follow the hooks fired by an '
           'example.',
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: kSpacingLarge),
         Text(loremFiller, style: textTheme.textStyle),
-        const SizedBox(height: 32),
+        const SizedBox(height: kSpacingXLarge),
         Container(
           key: keys.innerScrollList,
           height: 300,
@@ -116,11 +149,11 @@ class CupertinoStagePageState extends State<CupertinoStagePage> {
           child: ListView.builder(
             // ignore: deprecated_member_use
             cacheExtent: 2000,
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(kSpacingMedium),
             itemCount: scrollParagraphs.length,
             itemBuilder: (context, index) {
               return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
+                padding: const EdgeInsets.symmetric(vertical: kSpacingSmall),
                 child: Text(
                   key: index == 2 ? keys.innerScrollItem3 : null,
                   scrollParagraphs[index],
@@ -130,9 +163,9 @@ class CupertinoStagePageState extends State<CupertinoStagePage> {
             },
           ),
         ),
-        const SizedBox(height: 32),
+        const SizedBox(height: kSpacingXLarge),
         Text(loremFiller, style: textTheme.textStyle),
-        const SizedBox(height: 32),
+        const SizedBox(height: kSpacingXLarge),
         SizedBox(
           key: keys.lateElementSlot,
           child: _lateElementMounted
@@ -150,10 +183,10 @@ class CupertinoStagePageState extends State<CupertinoStagePage> {
                   ),
                 ),
         ),
-        const SizedBox(height: 32),
+        const SizedBox(height: kSpacingXLarge),
         for (var i = 0; i < 6; i++)
           Padding(
-            padding: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.only(bottom: kSpacingMedium),
             child: Text(
               key: i == 4 ? keys.belowFold : null,
               'Filler section ${i + 1} — scroll-into-view target lives '
@@ -174,11 +207,16 @@ class _CupertinoBullet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: kSpacingTiny),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('•  '),
+          Icon(
+            CupertinoIcons.checkmark_circle_fill,
+            size: 18,
+            color: CupertinoTheme.of(context).primaryColor,
+          ),
+          const SizedBox(width: kSpacingSmall),
           Expanded(child: Text(text)),
         ],
       ),
@@ -186,9 +224,10 @@ class _CupertinoBullet extends StatelessWidget {
   }
 }
 
-/// A bordered [CupertinoButton] — `CupertinoButton` alone has no outlined
-/// variant, so this wraps it in a [DecoratedBox] to read as a plain iOS
-/// button (the Cupertino counterpart of `StagePage`'s `OutlinedButton`).
+/// A bordered [CupertinoButton] with a subtle tinted background —
+/// `CupertinoButton` alone has no outlined/filled variant, so this wraps it
+/// in a [DecoratedBox] to read as a clearly-tappable iOS button (the
+/// Cupertino counterpart of `StagePage`'s tonal `FilledButton`).
 class _CupertinoStageButton extends StatelessWidget {
   const _CupertinoStageButton({required this.stageKey, required this.label});
 
@@ -197,16 +236,21 @@ class _CupertinoStageButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final primaryColor = CupertinoTheme.of(context).primaryColor;
     return DecoratedBox(
       key: stageKey,
       decoration: BoxDecoration(
-        border: Border.all(color: CupertinoColors.separator),
+        color: primaryColor.withValues(alpha: 0.12),
+        border: Border.all(color: primaryColor.withValues(alpha: 0.3)),
         borderRadius: BorderRadius.circular(8),
       ),
       child: CupertinoButton(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(
+          horizontal: kSpacingMedium,
+          vertical: kSpacingSmall,
+        ),
         onPressed: () {},
-        child: Text(label),
+        child: Text(label, style: TextStyle(color: primaryColor)),
       ),
     );
   }

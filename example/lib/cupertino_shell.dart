@@ -25,7 +25,7 @@ class CupertinoDemoApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return CupertinoApp(
       title: 'driverjs demo',
-      theme: const CupertinoThemeData(primaryColor: Color(0xFF6366F1)),
+      theme: const CupertinoThemeData(primaryColor: kBrandColor),
       // Wrapped here (above the shell, not inside it) so `ScaffoldMessenger.
       // of(ctx.context)` — used by the `api` scenario group's snackbar demo,
       // a scenario file we can't modify — finds an ancestor even though the
@@ -49,7 +49,7 @@ class _DesignSwitcher extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(kSpacingMedium),
       child: CupertinoSlidingSegmentedControl<AppDesign>(
         groupValue: design.value,
         children: const {
@@ -84,6 +84,7 @@ class _ScenarioList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final primaryColor = CupertinoTheme.of(context).primaryColor;
     return ListView(
       children: [
         for (final group in scenarioCatalog)
@@ -91,15 +92,43 @@ class _ScenarioList extends StatelessWidget {
             header: Text(group.title),
             children: [
               for (final scenario in group.scenarios)
-                CupertinoListTile(
-                  title: Text(scenario.title),
-                  subtitle: Text(
-                    scenario.description,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  trailing: const CupertinoListTileChevron(),
-                  onTap: () => onScenarioSelected(scenario),
+                Builder(
+                  builder: (context) {
+                    final selected = scenario.id == demo.activeScenarioId;
+                    return DecoratedBox(
+                      decoration: BoxDecoration(
+                        border: Border(
+                          left: BorderSide(
+                            color: selected
+                                ? primaryColor
+                                : CupertinoColors.transparent,
+                            width: 3,
+                          ),
+                        ),
+                      ),
+                      child: CupertinoListTile(
+                        backgroundColor: selected
+                            ? primaryColor.withValues(alpha: 0.12)
+                            : null,
+                        title: Text(
+                          scenario.title,
+                          style: TextStyle(
+                            fontWeight: selected
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                            color: selected ? primaryColor : null,
+                          ),
+                        ),
+                        subtitle: Text(
+                          scenario.description,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        trailing: const CupertinoListTileChevron(),
+                        onTap: () => onScenarioSelected(scenario),
+                      ),
+                    );
+                  },
                 ),
             ],
           ),
@@ -128,6 +157,7 @@ class _ScenarioListPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
+      backgroundColor: CupertinoColors.secondarySystemGroupedBackground,
       navigationBar: const CupertinoNavigationBar(middle: Text('Scenarios')),
       child: SafeArea(
         child: Column(
@@ -179,7 +209,7 @@ class _CupertinoDemoShellState extends State<CupertinoDemoShell> {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.all(kSpacingSmall),
           child: CupertinoLogPanel(
             controller: _demo.logController,
             initiallyExpanded: isWide,
@@ -188,28 +218,43 @@ class _CupertinoDemoShellState extends State<CupertinoDemoShell> {
       ],
     );
 
+    final navBarTitle = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          CupertinoIcons.compass,
+          size: 20,
+          color: CupertinoTheme.of(context).primaryColor,
+        ),
+        const SizedBox(width: kSpacingSmall),
+        const Text('driverjs demo'),
+      ],
+    );
+
     if (isWide) {
       return CupertinoPageScaffold(
-        navigationBar: const CupertinoNavigationBar(
-          middle: Text('driverjs demo'),
-        ),
+        navigationBar: CupertinoNavigationBar(middle: navBarTitle),
         child: SafeArea(
           child: Row(
             children: [
               SizedBox(
                 width: 320,
-                child: Column(
-                  children: [
-                    _DesignSwitcher(demo: _demo, design: widget.design),
-                    Expanded(
-                      child: _ScenarioList(
-                        demo: _demo,
-                        onScenarioSelected: (scenario) => setState(
-                          () => _demo.runScenario(context, scenario),
+                child: ColoredBox(
+                  color: CupertinoColors.secondarySystemGroupedBackground
+                      .resolveFrom(context),
+                  child: Column(
+                    children: [
+                      _DesignSwitcher(demo: _demo, design: widget.design),
+                      Expanded(
+                        child: _ScenarioList(
+                          demo: _demo,
+                          onScenarioSelected: (scenario) => setState(
+                            () => _demo.runScenario(context, scenario),
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
               Container(width: 0.5, color: CupertinoColors.separator),
@@ -222,7 +267,7 @@ class _CupertinoDemoShellState extends State<CupertinoDemoShell> {
 
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
-        middle: const Text('driverjs demo'),
+        middle: navBarTitle,
         leading: CupertinoButton(
           padding: EdgeInsets.zero,
           onPressed: () {

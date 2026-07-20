@@ -6,6 +6,7 @@ library;
 
 import 'package:flutter/cupertino.dart';
 
+import 'app_design.dart';
 import 'log_panel.dart';
 
 /// Renders [controller]'s entries in a collapsible Cupertino-styled panel,
@@ -30,39 +31,63 @@ class _CupertinoLogPanelState extends State<CupertinoLogPanel> {
 
   @override
   Widget build(BuildContext context) {
+    // Same "terminal" treatment as the Material LogPanel, kept in sync by eye
+    // so both designs read as the same console widget.
+    const consoleSurface = Color(0xFF1A1B26);
+    const consoleBorder = Color(0xFF2E2F3E);
+    const timestampColor = Color(0xFF7A7C99);
+    const messageColor = Color(0xFFA5B4FC);
+
     return AnimatedBuilder(
       animation: widget.controller,
       builder: (context, _) {
         final entries = widget.controller.entries;
         return DecoratedBox(
           decoration: BoxDecoration(
-            border: Border.all(color: CupertinoColors.separator),
-            borderRadius: BorderRadius.circular(8),
+            color: consoleSurface,
+            border: Border.all(color: consoleBorder),
+            borderRadius: BorderRadius.circular(10),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Padding(
+              Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 4,
+                  horizontal: kSpacingMedium,
+                  vertical: kSpacingSmall,
+                ),
+                decoration: const BoxDecoration(
+                  border: Border(bottom: BorderSide(color: consoleBorder)),
                 ),
                 child: Row(
                   children: [
+                    const Icon(
+                      CupertinoIcons.command,
+                      size: 16,
+                      color: messageColor,
+                    ),
+                    const SizedBox(width: kSpacingSmall),
                     Expanded(
                       child: Text(
                         'Event log (${entries.length})',
-                        style: CupertinoTheme.of(context).textTheme.textStyle,
+                        style: const TextStyle(
+                          color: CupertinoColors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                     CupertinoButton(
                       padding: EdgeInsets.zero,
                       minimumSize: Size.zero,
                       onPressed: widget.controller.clear,
-                      child: const Icon(CupertinoIcons.delete, size: 20),
+                      child: const Icon(
+                        CupertinoIcons.delete,
+                        size: 20,
+                        color: timestampColor,
+                      ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: kSpacingSmall),
                     CupertinoButton(
                       padding: EdgeInsets.zero,
                       minimumSize: Size.zero,
@@ -72,6 +97,7 @@ class _CupertinoLogPanelState extends State<CupertinoLogPanel> {
                             ? CupertinoIcons.chevron_up
                             : CupertinoIcons.chevron_down,
                         size: 20,
+                        color: timestampColor,
                       ),
                     ),
                   ],
@@ -84,21 +110,45 @@ class _CupertinoLogPanelState extends State<CupertinoLogPanel> {
                       ? const Center(
                           child: Text(
                             'Hook events will appear here as scenarios run.',
-                            style: TextStyle(
-                              color: CupertinoColors.inactiveGray,
-                            ),
+                            style: TextStyle(color: timestampColor),
                           ),
                         )
                       : ListView.builder(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          itemCount: entries.length,
-                          itemBuilder: (context, index) => Text(
-                            entries[index],
-                            style: const TextStyle(
-                              fontFamily: 'monospace',
-                              fontSize: 12,
-                            ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: kSpacingMedium,
+                            vertical: kSpacingSmall,
                           ),
+                          itemCount: entries.length,
+                          itemBuilder: (context, index) {
+                            final parts = splitLogEntry(entries[index]);
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2),
+                              child: Text.rich(
+                                TextSpan(
+                                  children: [
+                                    if (parts.timestamp.isNotEmpty)
+                                      TextSpan(
+                                        text: '[${parts.timestamp}] ',
+                                        style: const TextStyle(
+                                          color: timestampColor,
+                                        ),
+                                      ),
+                                    TextSpan(
+                                      text: parts.message,
+                                      style: const TextStyle(
+                                        color: messageColor,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                style: const TextStyle(
+                                  fontFamily: 'monospace',
+                                  fontSize: 12,
+                                  height: 1.4,
+                                ),
+                              ),
+                            );
+                          },
                         ),
                 ),
             ],
