@@ -66,11 +66,21 @@ class _MaterialDemoShellState extends State<MaterialDemoShell> {
       child: ListView(
         padding: EdgeInsets.zero,
         children: [
-          DrawerHeader(
-            decoration: const BoxDecoration(),
+          Padding(
+            // A plain Padding, not a DrawerHeader: DrawerHeader reserves a
+            // fixed banner-style height (sized for a drawer-only avatar/logo
+            // block under a status bar) regardless of content, which left a
+            // large empty gap above the wordmark when this same sidebar is
+            // also used as a permanent wide-screen panel, not just a Drawer.
+            padding: const EdgeInsets.fromLTRB(
+              16,
+              kSpacingLarge,
+              16,
+              kSpacingMedium,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text.rich(
                   TextSpan(

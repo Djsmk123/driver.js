@@ -86,6 +86,12 @@ class _ScenarioList extends StatelessWidget {
   Widget build(BuildContext context) {
     final primaryColor = CupertinoTheme.of(context).primaryColor;
     return ListView(
+      // CupertinoListSection.insetGrouped only adds its usual breathing room
+      // *between* sections, not before the first one — without this the
+      // first group's header sits almost flush against whatever's above the
+      // list (the design switcher), noticeably tighter than the matching gap
+      // in the Material sidebar.
+      padding: const EdgeInsets.only(top: kSpacingSmall),
       children: [
         for (final group in scenarioCatalog)
           CupertinoListSection.insetGrouped(
